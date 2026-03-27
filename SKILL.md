@@ -209,12 +209,52 @@ https://m.media-amazon.com/images/I/example.jpg
 - Image: post `.imageUrl` as a bare URL on its own line — Discord and Telegram auto-embed it
 - Availability + badge on one line, only if relevant
 
-**For search results (multiple items):** show 3–5 max unless asked for more. Lead with the strongest match, not the full page. One line per result with title-link + price + rating is enough — only pull full product details if the user wants to dig in.
+**Search results (multiple items):** 3–5 max unless asked for more. One line each — title-link + price + rating. Only pull full product details if the user wants to dig in.
 
-**In plain-text surfaces:** same — bare URL on its own line, let the surface unfurl it.
+```
+1. **[Sony WF-1000XM5](url)** — $248.00 · ⭐ 4.0 (5,813)
+2. **[Sony WF-1000XM6](url)** — $299.00 · ⭐ 4.5 (192) 🔥 Deal
+3. **[Technics EAH-AZ100](url)** — $249.00 · ⭐ 4.0 (1,221)
+```
 
-**Fields worth surfacing:** title, price, rating, availability, badge (Deals/Prime), url, imageUrl.
-**Fields to omit by default:** listPrice (unless there's a meaningful discount), specs, description, features — offer these only on explicit request.
+**Cart:**
+```
+🛒 2 items · $547.00
+• [Sony WF-1000XM5](url) × 1 — $248.00
+• [Apple AirPods Pro](url) × 2 — $299.00
+```
+
+**Checkout preview:**
+```
+📦 Order Summary
+[Sony WF-1000XM5](url) × 1 — $248.00
+Shipping: Free (Prime, arrives Wed Apr 2)
+Tax: $22.32
+**Total: $270.32**
+📍 John D. · 123 Main St, New York NY 10001
+💳 Visa ····4242
+```
+Always show this and ask for explicit confirmation before running `order place`.
+
+**Order placed:**
+```
+✅ Order placed — #113-4567890-1234567
+[Sony WF-1000XM5](url) × 1 — $270.32
+Estimated delivery: Wed, Apr 2
+```
+
+**Reviews (when asked):**
+```
+⭐⭐⭐⭐⭐ **Great ANC, comfortable fit** — verified purchase
+> "Best earbuds I've owned. ANC is incredible for commuting..."
+— JohnD · 2 days ago · 47 helpful
+```
+Show 2–3 reviews max by default, top helpful first.
+
+**In plain-text surfaces:** same patterns, skip markdown links, bare URL on its own line for images.
+
+**Fields worth surfacing:** title, price, rating, availability, badge, url, imageUrl.
+**Omit by default:** listPrice (show only if discount > 10%), specs, description, features — surface on request.
 
 ## Gotchas
 
