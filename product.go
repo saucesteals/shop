@@ -98,11 +98,11 @@ type Spec struct {
 	Value string `json:"value"`
 }
 
-// VariantInfo summarizes variant dimensions without enumerating all combinations.
+// VariantInfo describes which variant this product is within its family.
+// Use shop variants to get the full dimension/combination tree.
 type VariantInfo struct {
-	ParentID   string             `json:"parentId,omitempty"`
-	Dimensions []VariantDimension `json:"dimensions"`
-	Selected   map[string]string  `json:"selected,omitempty"`
+	ParentID string            `json:"parentId,omitempty"`
+	Selected map[string]string `json:"selected,omitempty"` // e.g. {"Color": "Black"}
 }
 
 // VariantDimension is a single axis of variation (e.g., "Color", "Size").
