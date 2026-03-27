@@ -191,6 +191,31 @@ Errors JSON on stderr: `{"code": "...", "message": "..."}`. Key exit codes:
 - 40 `cart_empty` / 41 `cart_changed` — re-run checkout before placing
 - 50 `rate_limited` — back off and retry
 
+## Presenting Results to Users
+
+When showing a product, don't dump JSON. Format it for humans.
+
+**In markdown-capable surfaces (Discord, Telegram, etc.):**
+
+```
+**[Sony WF-1000XM5](https://amazon.com/dp/B0C33XXS56)** — $248.00
+⭐ 4.0 (5,813 reviews) · In Stock · Prime
+[​](https://m.media-amazon.com/images/I/example.jpg)
+```
+
+- Title is a markdown link to `.url`
+- Price: divide cents by 100, format as `$X.XX`
+- Rating: `⭐ X.X (N reviews)`
+- Image: embed using a hidden markdown link — `[​](imageUrl)` (zero-width space as link text). Discord/Telegram render this as an inline image with no visible text.
+- Availability + badge on one line, only if relevant
+
+**For search results (multiple items):** show 3–5 max unless asked for more. Lead with the strongest match, not the full page. One line per result with title-link + price + rating is enough — only pull full product details if the user wants to dig in.
+
+**In plain-text surfaces:** skip the hidden image trick, just include the URL on its own line so the surface can decide whether to unfurl it.
+
+**Fields worth surfacing:** title, price, rating, availability, badge (Deals/Prime), url, imageUrl.
+**Fields to omit by default:** listPrice (unless there's a meaningful discount), specs, description, features — offer these only on explicit request.
+
 ## Gotchas
 
 - Prices are **always cents**. `--min-price 2000` = $20.00. Display: divide by 100.
