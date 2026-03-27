@@ -1,22 +1,17 @@
 package amazon
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
-	"github.com/saucesteals/shop"
-)
+	"golang.org/x/net/html"
 
-// organicASINRe matches the opening tag of organic search result divs, capturing
-// the ASIN. Amazon places both data-component-type="s-search-result" and
-// data-asin on the same div; we match both attribute orders to be safe.
-var organicASINRe = regexp.MustCompile(
-	`(?:data-component-type="s-search-result"[^>]*data-asin="([A-Z0-9]{10})"|data-asin="([A-Z0-9]{10})"[^>]*data-component-type="s-search-result")`,
+	"github.com/saucesteals/shop"
 )
 
 // mapSearchSort maps shop.SearchSort values to Amazon's URL sort parameter.
@@ -186,23 +181,44 @@ func (s *Store) searchASINs(ctx context.Context, api *tvssClient, keyword string
 		return nil, shop.Errorf(shop.ErrNetwork, "read search response: %v", err)
 	}
 
-	// Extract unique ASINs from organic result divs only, preserving rank order.
-	// Sponsored/featured results use different data-component-type values and
-	// are excluded by matching only "s-search-result" divs.
-	matches := organicASINRe.FindAllSubmatch(body, -1)
+	return parseOrganicASINs(body)
+}
+
+// parseOrganicASINs walks an Amazon search result HTML document and returns
+// ASINs for organic results in page rank order. It targets only nodes with
+// data-component-type="s-search-result", which Amazon uses exclusively for
+// organic results — sponsored/featured units use different component types.
+func parseOrganicASINs(body []byte) ([]string, error) {
+	doc, err := html.Parse(bytes.NewReader(body))
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrInternal, "parse search HTML: %v", err)
+	}
+
 	seen := make(map[string]bool)
 	var asins []string
-	for _, m := range matches {
-		// Group 1: component-type before data-asin; group 2: data-asin first.
-		asin := string(m[1])
-		if asin == "" {
-			asin = string(m[2])
+
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			var componentType, asin string
+			for _, a := range n.Attr {
+				switch a.Key {
+				case "data-component-type":
+					componentType = a.Val
+				case "data-asin":
+					asin = a.Val
+				}
+			}
+			if componentType == "s-search-result" && asin != "" && !seen[asin] {
+				seen[asin] = true
+				asins = append(asins, asin)
+			}
 		}
-		if !seen[asin] {
-			seen[asin] = true
-			asins = append(asins, asin)
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
 		}
 	}
+	walk(doc)
 
 	return asins, nil
 }
