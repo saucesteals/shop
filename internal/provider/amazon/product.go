@@ -188,7 +188,7 @@ func mapProduct(tp *tvssProduct, domain, currency string) *shop.Product {
 
 	if tp.CustomerReviewsCount > 0 || tp.AverageOverallRating > 0 {
 		p.Rating = &shop.Rating{
-			Average: tp.AverageOverallRating,
+			Average: tp.AverageOverallRating / 2, // TVSS returns 0–10; normalize to 0–5
 			Count:   tp.CustomerReviewsCount,
 		}
 	}

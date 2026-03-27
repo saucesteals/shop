@@ -12,9 +12,12 @@ import (
 	"github.com/saucesteals/shop"
 )
 
-// asinRe extracts 10-character Amazon ASINs from HTML data-asin attributes.
-// Matches all ASIN formats (not just B0-prefixed).
-var asinRe = regexp.MustCompile(`data-asin="([A-Z0-9]{10})"`)
+// organicASINRe matches the opening tag of organic search result divs, capturing
+// the ASIN. Amazon places both data-component-type="s-search-result" and
+// data-asin on the same div; we match both attribute orders to be safe.
+var organicASINRe = regexp.MustCompile(
+	`(?:data-component-type="s-search-result"[^>]*data-asin="([A-Z0-9]{10})"|data-asin="([A-Z0-9]{10})"[^>]*data-component-type="s-search-result")`,
+)
 
 // mapSearchSort maps shop.SearchSort values to Amazon's URL sort parameter.
 func mapSearchSort(s shop.SearchSort) string {
@@ -120,7 +123,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 				}
 				if bp.CustomerReviewsCount > 0 || bp.AverageOverallRating > 0 {
 					ps.Rating = &shop.Rating{
-						Average: bp.AverageOverallRating,
+						Average: bp.AverageOverallRating / 2, // TVSS returns 0–10; normalize to 0–5
 						Count:   bp.CustomerReviewsCount,
 					}
 				}
@@ -183,12 +186,18 @@ func (s *Store) searchASINs(ctx context.Context, api *tvssClient, keyword string
 		return nil, shop.Errorf(shop.ErrNetwork, "read search response: %v", err)
 	}
 
-	// Extract unique ASINs preserving rank order.
-	matches := asinRe.FindAllSubmatch(body, -1)
+	// Extract unique ASINs from organic result divs only, preserving rank order.
+	// Sponsored/featured results use different data-component-type values and
+	// are excluded by matching only "s-search-result" divs.
+	matches := organicASINRe.FindAllSubmatch(body, -1)
 	seen := make(map[string]bool)
 	var asins []string
 	for _, m := range matches {
+		// Group 1: component-type before data-asin; group 2: data-asin first.
 		asin := string(m[1])
+		if asin == "" {
+			asin = string(m[2])
+		}
 		if !seen[asin] {
 			seen[asin] = true
 			asins = append(asins, asin)
