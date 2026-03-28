@@ -71,11 +71,28 @@ Product IDs are ASINs (10-char alphanumeric). Returns title, brand, price, listP
 
 ### Variants
 
+Use when a product has multiple options (colors, sizes, styles) and you need to show them or let the user pick one.
+
+`shop product` tells you which variant you're currently looking at via `variantInfo.selected` (e.g. `{"Color": "Black"}`). To get the full option tree and all other ASINs, call `shop variants`.
+
 ```bash
 shop variants B0D1XD1ZV3
 ```
 
-Returns `.dimensions[]` (Color, Size, etc.) with options, `.combinations[]` mapping dimension values → productId + price.
+Response:
+- `.dimensions[]` — each axis of variation (Color, Size, etc.) with all available `.options[].value` strings and optional `.options[].imageUrl` swatches
+- `.combinations[]` — every variant as `{ productId, values: {"Color": "Black"}, price, available }`
+
+```bash
+# Show all color options + their ASINs
+shop variants B0C33XXS56 | jq '[.combinations[] | {asin: .productId, color: .values.Color, price: (.price.amount / 100)}]'
+# → [{"asin":"B0C33XXS56","color":"Black","price":208.99}, ...]
+
+# Get ASIN for a specific color
+shop variants B0C33XXS56 | jq -r '.combinations[] | select(.values.Color == "Silver") | .productId'
+```
+
+If the user asks about a product with variants (e.g. "does it come in white?", "show me all sizes"), call `shop variants` and present the options cleanly — don't just show the ASIN they happened to land on.
 
 ### Reviews
 
