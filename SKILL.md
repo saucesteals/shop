@@ -122,6 +122,16 @@ shop cart remove B0D1XD1ZV3           # remove item
 shop cart clear                       # empty cart
 ```
 
+For a specific Amazon offer, keep the ASIN as the product ID and pass the offer ID:
+
+```bash
+shop cart add B0D1XD1ZV3 --offer-id '<offer-id>' --qty 2 --store amazon
+```
+
+Pass the offer ID unchanged. Omitting `--offer-id` selects the current buy-box offer.
+`shop offers <asin>` exposes the buy-box offer ID in `.offers[].id`, not a full
+seller listing. An offer ID obtained separately can also be supplied for the same ASIN.
+
 All cart commands return full cart snapshot: `.items[]` (product + quantity) and `.subtotal`.
 
 ### Checkout (preview only)

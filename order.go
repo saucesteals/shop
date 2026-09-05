@@ -1,5 +1,12 @@
 package shop
 
+// CartAddOpts controls which offer is added to the cart.
+type CartAddOpts struct {
+	// OfferID is an opaque offer ID for the product. Empty selects the
+	// default offer. Providers must not substitute a different offer when set.
+	OfferID string `json:"offerId,omitempty"`
+}
+
 // CartContents is a snapshot of the current cart state.
 type CartContents struct {
 	Items    []CartEntry `json:"items"`

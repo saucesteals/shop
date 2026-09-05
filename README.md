@@ -286,7 +286,21 @@ shop cart remove B0D1XD1ZV3           # Remove item
 shop cart clear                       # Empty the cart
 ```
 
+To add a specific Amazon offer, pass its ID alongside the product ASIN:
+
+```bash
+shop cart add B0D1XD1ZV3 --offer-id '<offer-id>' --qty 2 --store amazon
+```
+
+The offer ID is passed unchanged to Amazon, without looking up the buy-box offer.
+Omit `--offer-id` to use the current buy-box offer. `shop offers <asin>` returns
+the buy-box offer ID in `.offers[].id`; Amazon's offers command does not list
+other sellers, but you can supply an offer ID obtained separately for the same ASIN.
+
 All cart commands return the full cart snapshot with items and subtotal.
+
+Go callers pass `nil` to `Cart.Add(ctx, productID, quantity, nil)` for the default
+offer, or `&shop.CartAddOpts{OfferID: offerID}` as the final argument to select one.
 
 ### Checkout & Order
 

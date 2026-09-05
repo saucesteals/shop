@@ -11,11 +11,11 @@ type cartImpl struct {
 	store *Store
 }
 
-// Add adds an item to the Amazon cart.
+// Add adds an item to the Amazon cart using the specified offer or the buy-box offer.
 //
 // TVSS endpoint: PUT /marketplaces/{marketplace}/cart/items
 // Content-Type: application/vnd.com.amazon.tvss.api+json; type="cart.add.request/v1"
-func (c *cartImpl) Add(ctx context.Context, id string, quantity int) (*shop.CartContents, error) {
+func (c *cartImpl) Add(ctx context.Context, id string, quantity int, opts *shop.CartAddOpts) (*shop.CartContents, error) {
 	if err := validateASIN(id); err != nil {
 		return nil, err
 	}
@@ -29,26 +29,33 @@ func (c *cartImpl) Add(ctx context.Context, id string, quantity int) (*shop.Cart
 		quantity = 1
 	}
 
-	// Fetch the offerId from the product detail. TVSS requires it.
-	prodURL := api.tvssPath([]string{"products", id}, nil)
-
-	var tp tvssProduct
-	if err := api.doGet(ctx, prodURL, &tp); err != nil {
-		return nil, shop.Errorf(shop.ErrNotFound, "product %s: %v", id, err)
+	var offerID string
+	if opts != nil {
+		offerID = opts.OfferID
 	}
 
-	if tp.OfferID == "" {
-		// Product exists in the catalog but has no current offer. This
-		// commonly happens when the product is out of stock in TVSS or
-		// the device type doesn't expose pricing.
-		return nil, shop.Errorf(shop.ErrOutOfStock, "product %s has no available offer", id)
+	if offerID == "" {
+		// TVSS requires an offer ID. Resolve the buy-box offer only when
+		// the caller has not selected a specific offer.
+		prodURL := api.tvssPath([]string{"products", id}, nil)
+
+		var tp tvssProduct
+		if err := api.doGet(ctx, prodURL, &tp); err != nil {
+			return nil, shop.Errorf(shop.ErrNotFound, "product %s: %v", id, err)
+		}
+
+		if tp.OfferID == "" {
+			return nil, shop.Errorf(shop.ErrOutOfStock, "product %s has no available offer", id)
+		}
+
+		offerID = tp.OfferID
 	}
 
 	req := tvssAddToCartRequest{
 		Items: []tvssAddToCartItem{
 			{
 				ASIN:     id,
-				OfferID:  tp.OfferID,
+				OfferID:  offerID,
 				Quantity: quantity,
 			},
 		},

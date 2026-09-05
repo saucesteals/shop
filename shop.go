@@ -89,7 +89,8 @@ type Store interface {
 // provider implementation — the CLI only reads it via View().
 type Cart interface {
 	// Add adds a product to the cart. quantity must be >= 1.
-	Add(ctx context.Context, id string, quantity int) (*CartContents, error)
+	// Nil opts selects the default offer for the product.
+	Add(ctx context.Context, id string, quantity int, opts *CartAddOpts) (*CartContents, error)
 
 	// Remove removes a product entirely from the cart.
 	Remove(ctx context.Context, id string) (*CartContents, error)

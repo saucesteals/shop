@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/saucesteals/shop"
@@ -23,7 +25,10 @@ func (c *CLI) newCartCmd() *cobra.Command {
 }
 
 func (c *CLI) newCartAddCmd() *cobra.Command {
-	var qty int
+	var (
+		qty     int
+		offerID string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "add <product-id>",
@@ -34,13 +39,21 @@ func (c *CLI) newCartAddCmd() *cobra.Command {
 				return shop.Errorf(shop.ErrInvalidInput, "quantity must be >= 1, got %d", qty)
 			}
 
+			if cmd.Flags().Changed("offer-id") && strings.TrimSpace(offerID) == "" {
+				return shop.Errorf(shop.ErrInvalidInput, "offer ID must not be empty")
+			}
+
 			ctx, cancel, s, err := c.resolveStore(cmd)
 			if err != nil {
 				return err
 			}
 			defer cancel()
 
-			result, err := s.Cart().Add(ctx, args[0], qty)
+			opts := &shop.CartAddOpts{
+				OfferID: offerID,
+			}
+
+			result, err := s.Cart().Add(ctx, args[0], qty, opts)
 			if err != nil {
 				return err
 			}
@@ -49,7 +62,9 @@ func (c *CLI) newCartAddCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&qty, "qty", 1, "quantity to add")
+	f := cmd.Flags()
+	f.IntVar(&qty, "qty", 1, "quantity to add")
+	f.StringVar(&offerID, "offer-id", "", "specific offer ID for the product (defaults to the buy-box offer on Amazon)")
 
 	return cmd
 }
