@@ -46,7 +46,7 @@ func (c *CLI) newReviewsCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.IntVar(&page, "page", 1, "page number")
 	f.IntVar(&pageSize, "page-size", 0, "results per page")
-	f.StringVar(&sortBy, "sort", "", "sort: recent|helpful|rating")
+	f.StringVar(&sortBy, "sort", "", "sort: recent|helpful (provider-dependent)")
 	f.IntVar(&rating, "rating", 0, "filter to specific star rating (1-5)")
 
 	return cmd
