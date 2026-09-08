@@ -101,7 +101,9 @@ shop reviews B0D1XD1ZV3
 shop reviews B0D1XD1ZV3 --sort recent --rating 5 --page 2
 ```
 
-Flags: `--sort` (recent|helpful|rating), `--rating` (1-5), `--page`, `--page-size`
+Flags: `--sort` (recent|helpful for Amazon), `--rating` (1-5), `--page` (1-100), `--page-size` (1-100, default 10).
+
+Review bodies use the full text supplied by Amazon. Preserve `attributes.possiblyTruncated` when present; do not call that body complete. Aggregate ratings are product-wide even when filtering reviews. Use `hasMore` to decide whether to request another page. Pagination follows a live feed and later pages take additional requests; errors are not evidence that a product has no reviews.
 
 ### Offers
 

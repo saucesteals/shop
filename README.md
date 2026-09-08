@@ -250,12 +250,16 @@ shop reviews B0D1XD1ZV3
 shop reviews B0D1XD1ZV3 --sort recent --rating 5 --page 2
 ```
 
+Amazon reviews combine full web review text, native review IDs, verified-purchase flags, helpful votes and available images with TVSS aggregate ratings. The aggregate describes all product ratings, not just the selected star filter. `reviews` is always an array; `hasMore` follows Amazon’s continuation state. A body ending in an ellipsis is marked `attributes.possiblyTruncated` rather than assumed complete.
+
+Pagination follows the live review feed, not a fixed snapshot: new reviews can shift pages between commands. Unexpected responses and repeated pages return errors instead of silently reporting an empty or duplicate page. Native review IDs replace the old synthesized IDs; consumers that persist review IDs should account for that change.
+
 <details>
 <summary><strong>Review flags</strong></summary>
 
-- `--sort` — `recent`, `helpful`, `rating`
+- `--sort` — `recent` or `helpful` for Amazon (`rating` is not supported)
 - `--rating` — Filter to specific star rating (1–5)
-- `--page` / `--page-size` — Pagination
+- `--page` / `--page-size` — Pages 1–100; page size 1–100 (default 10). Later pages follow Amazon’s continuation cursors and may take longer.
 
 </details>
 
