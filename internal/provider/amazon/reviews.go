@@ -177,9 +177,11 @@ func fetchReviewPage(ctx context.Context, api *tvssClient, target string, form u
 	return body, nil
 }
 
+// A loaded event precedes the content and is not completion. Require a
+// review-list operation followed by pagination, including explicit empty pages.
 func decodeReviewStream(body []byte) ([]byte, error) {
-	var out strings.Builder
-	loaded := false
+	var list, pagination strings.Builder
+	listSeen, paginationSeen := false, false
 	for _, part := range strings.Split(string(body), "&&&") {
 		if strings.TrimSpace(part) == "" {
 			continue
@@ -189,22 +191,40 @@ func decodeReviewStream(body []byte) ([]byte, error) {
 			return nil, shop.Errorf(shop.ErrStoreError, "unexpected Amazon reviews response")
 		}
 		var op string
-		_ = json.Unmarshal(chunk[0], &op)
-		if op == "loaded" {
-			loaded = true
+		if json.Unmarshal(chunk[0], &op) != nil {
+			return nil, shop.Errorf(shop.ErrStoreError, "invalid Amazon reviews operation")
 		}
-		if (op == "append" || op == "update") && len(chunk) == 3 {
-			var selector, markup string
-			if json.Unmarshal(chunk[1], &selector) != nil || json.Unmarshal(chunk[2], &markup) != nil {
-				return nil, shop.Errorf(shop.ErrStoreError, "invalid Amazon reviews fragment")
+		if op != "append" && op != "update" {
+			if op == "loaded" {
+				continue
 			}
-			if selector == "#cm_cr-review_list" || selector == "#reviews-pagination" {
-				out.WriteString(markup)
+			return nil, shop.Errorf(shop.ErrStoreError, "unsupported Amazon reviews operation")
+		}
+		if len(chunk) != 3 {
+			return nil, shop.Errorf(shop.ErrStoreError, "invalid Amazon reviews fragment")
+		}
+		var selector, markup string
+		if json.Unmarshal(chunk[1], &selector) != nil || json.Unmarshal(chunk[2], &markup) != nil {
+			return nil, shop.Errorf(shop.ErrStoreError, "invalid Amazon reviews fragment")
+		}
+		switch selector {
+		case "#cm_cr-review_list":
+			if op == "update" {
+				list.Reset()
 			}
+			list.WriteString(markup)
+			listSeen = true
+			paginationSeen = false
+		case "#reviews-pagination", "#cm_cr-pagination_bar":
+			if op == "update" {
+				pagination.Reset()
+			}
+			pagination.WriteString(markup)
+			paginationSeen = listSeen
 		}
 	}
-	if !loaded {
-		return nil, shop.Errorf(shop.ErrStoreError, "Amazon did not confirm review loading")
+	if !listSeen || !paginationSeen {
+		return nil, shop.Errorf(shop.ErrStoreError, "Amazon review response ended before content and pagination were complete")
 	}
-	return []byte(out.String()), nil
+	return []byte(list.String() + pagination.String()), nil
 }

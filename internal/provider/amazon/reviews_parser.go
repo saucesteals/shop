@@ -48,13 +48,17 @@ func parseReviewPage(body []byte) (*reviewPage, error) {
 		var state struct {
 			Next string `json:"nextPageToken"`
 		}
-		if json.Unmarshal([]byte(reviewAttr(n, "data-reviews-state-param")), &state) == nil {
-			p.Next = state.Next
+		if json.Unmarshal([]byte(reviewAttr(n, "data-reviews-state-param")), &state) != nil || strings.TrimSpace(state.Next) == "" {
+			return nil, shop.Errorf(shop.ErrStoreError, "Amazon show-more control is missing valid continuation state")
 		}
+		p.Next = state.Next
 	}
 	nodes := reviewFind(doc, "data-hook", "mobley-review-content")
 	if len(nodes) == 0 {
 		nodes = reviewFind(doc, "data-hook", "review")
+	}
+	if len(nodes) == 0 && !strings.Contains(reviewText(doc), "Sorry, no reviews match your current selections.") {
+		return nil, shop.Errorf(shop.ErrStoreError, "Amazon returned unrecognized review content, not a confirmed empty result")
 	}
 	for _, n := range nodes {
 		r := shop.Review{ID: reviewAttr(n, "id"), Author: reviewFirstText(n, "class", "a-profile-name"), Title: reviewFirstText(n, "data-hook", "review-title"), Date: reviewFirstText(n, "data-hook", "review-date")}
