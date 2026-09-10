@@ -34,66 +34,6 @@ func (s *Store) Product(ctx context.Context, productID string) (*shop.Product, e
 	return mapProduct(&tp, s.handle, s.currency), nil
 }
 
-// Offers returns the buy-box offer for the product. The TVSS API does not
-// expose a multi-seller offers listing — it returns a single merchant per
-// product detail call. We return that as a single-offer result.
-//
-// TVSS endpoint: GET /marketplaces/{marketplace}/products/{asin}
-func (s *Store) Offers(ctx context.Context, productID string, _ *shop.OffersQuery) (*shop.OffersResult, error) {
-	if err := validateASIN(productID); err != nil {
-		return nil, err
-	}
-
-	api, err := s.tvssAPI()
-	if err != nil {
-		return nil, err
-	}
-
-	u := api.tvssPath([]string{"products", productID}, nil)
-
-	var tp tvssProduct
-	if err := api.doGet(ctx, u, &tp); err != nil {
-		return nil, err
-	}
-
-	result := &shop.OffersResult{
-		Page:    1,
-		HasMore: false,
-	}
-
-	offer := shop.Offer{
-		ID:        tp.OfferID,
-		Condition: shop.ConditionNew,
-		Price:     toMoney(tp.Price, s.currency),
-		Availability: shop.Availability{
-			Status: mapAvailabilityStatus(tp.ProductAvailability),
-		},
-		IsBuyBox: true,
-	}
-
-	if tp.MerchantInfo != nil {
-		offer.Seller = shop.Seller{
-			ID:   tp.MerchantInfo.MerchantID,
-			Name: tp.MerchantInfo.MerchantName,
-		}
-		offer.IsPrime = tp.MerchantInfo.SoldByAmazon
-	}
-
-	if tp.ShippingDetails != nil {
-		si := &shop.ShippingInfo{
-			Description: tp.ShippingDetails.ShippingCost,
-		}
-		if tp.ShippingDetails.FreeShipping {
-			si.Description = "Free Shipping"
-		}
-		offer.Shipping = si
-	}
-
-	result.Offers = append(result.Offers, offer)
-
-	return result, nil
-}
-
 // Variants returns the variation tree for a product.
 //
 // TVSS endpoint: GET /marketplaces/{marketplace}/products/{asin}/variations
