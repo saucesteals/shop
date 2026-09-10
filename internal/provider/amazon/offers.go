@@ -13,7 +13,11 @@ import (
 	"golang.org/x/net/html"
 )
 
-const aodPageSize = 10
+const (
+	aodPageSize     = 10
+	aodMaxPages     = 100
+	aodMaxBodyBytes = 8 << 20
+)
 
 // Offers returns every offer on the requested Amazon All Offers Display page.
 func (s *Store) Offers(ctx context.Context, productID string, query *shop.OffersQuery) (*shop.OffersResult, error) {
@@ -33,12 +37,12 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 	if q.PageSize == 0 {
 		q.PageSize = aodPageSize
 	}
-	if q.Page > 100 {
-		return nil, shop.Errorf(shop.ErrInvalidInput, "Amazon offers support pages 1–100")
-	}
-
 	// Amazon serves fixed ten-offer batches. Replay them to expose stable logical
 	// pages for arbitrary caller page sizes without skipping offers.
+	maxLogicalPage := (aodPageSize*aodMaxPages + q.PageSize - 1) / q.PageSize
+	if q.Page > maxLogicalPage {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "Amazon offers support offsets below %d", aodPageSize*aodMaxPages)
+	}
 	start, end := (q.Page-1)*q.PageSize, q.Page*q.PageSize
 	result := &shop.OffersResult{
 		Offers: []shop.Offer{},
@@ -46,7 +50,7 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 	}
 	seen := make(map[string]bool)
 	position := 0
-	for amazonPage := 1; position <= end; amazonPage++ {
+	for amazonPage := 1; position <= end && amazonPage <= aodMaxPages; amazonPage++ {
 		offers, exhausted, err := s.fetchAODOffers(ctx, productID, amazonPage)
 		if err != nil {
 			return nil, err
@@ -114,12 +118,15 @@ func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, aodMaxBodyBytes+1))
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "read Amazon offers response: %v", err)
 	}
+	if len(body) > aodMaxBodyBytes {
+		return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers response exceeded size limit")
+	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, shop.Errorf(shop.ErrAuthExpired, "Amazon offers auth expired (%d)", resp.StatusCode)
+		return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers access denied (%d)", resp.StatusCode)
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, shop.Errorf(shop.ErrNotFound, "Amazon offers not found")
