@@ -3,6 +3,7 @@ package amazon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -192,9 +193,13 @@ func parseAODOffer(node *html.Node, currency, marketplaceID string) (shop.Offer,
 			sellerID = marketplaceID
 		}
 	}
+	offerID := offerIDFromNode(node)
+	if offerID == "" {
+		return shop.Offer{}, shop.Errorf(shop.ErrStoreError, "Amazon offer is missing its offer ID")
+	}
 
 	offer := shop.Offer{
-		ID:        offerIDFromNode(node),
+		ID:        offerID,
 		Seller:    shop.Seller{ID: sellerID, Name: sellerName},
 		Condition: parseAODCondition(reviewFirstText(node, "id", "aod-offer-heading")),
 		Price: shop.Money{
@@ -261,18 +266,56 @@ func sellerIDFromNode(node *html.Node) string {
 }
 
 func offerIDFromNode(node *html.Node) string {
+	// Amazon's mobile AOD embeds the offer token as `oid` in a JSON action
+	// payload. The HTML parser has already decoded attribute entities here.
+	var offerID string
+	var walk func(*html.Node)
+	walk = func(current *html.Node) {
+		if offerID != "" {
+			return
+		}
+		if current.Type == html.ElementNode {
+			for _, attribute := range []string{"data-aw-aod-cart-api", "data-select-aod-qty-atc"} {
+				raw := reviewAttr(current, attribute)
+				if raw == "" {
+					continue
+				}
+				var action struct {
+					OfferID string `json:"oid"`
+				}
+				if err := json.Unmarshal([]byte(raw), &action); err == nil && action.OfferID != "" {
+					offerID = decodeAODOfferID(action.OfferID)
+					return
+				}
+			}
+		}
+		for child := current.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(node)
+	if offerID != "" {
+		return offerID
+	}
+
+	// Retain compatibility with desktop AOD variants that expose the token as
+	// a conventional hidden form field.
 	for _, input := range reviewElements(node, "input") {
 		if strings.HasSuffix(reviewAttr(input, "name"), "[offerListingId]") {
-			raw := reviewAttr(input, "value")
-			offerID, err := url.PathUnescape(raw)
-			if err != nil {
-				return raw
-			}
-			return offerID
+			return decodeAODOfferID(reviewAttr(input, "value"))
 		}
 	}
 
 	return ""
+}
+
+func decodeAODOfferID(raw string) string {
+	offerID, err := url.PathUnescape(raw)
+	if err != nil {
+		return raw
+	}
+
+	return offerID
 }
 
 func isAmazonSeller(name string) bool {

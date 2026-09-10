@@ -169,7 +169,7 @@ func offerPage(first, last int) string {
 <div id="aod-offer-soldBy">Sold by Amazon.com</div>
 <div id="aod-offer-shipsFrom">Ships from Amazon</div>
 <span>$10.%02d</span>
-<input name="items[0.base][offerListingId]" value="offer-%d" />
+<span data-action="aw-aod-cart-api" data-aw-aod-cart-api="{&quot;oid&quot;:&quot;offer-%d&quot;}"></span>
 </div>`, i, i)
 	}
 	body.WriteString("</body></html>")
