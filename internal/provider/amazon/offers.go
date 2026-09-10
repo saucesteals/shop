@@ -92,34 +92,35 @@ func (s *Store) fetchAODOffers(ctx context.Context, api *tvssClient, productID s
 	}
 	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
 
-	body, err := fetchAODPage(ctx, api, rawURL, true)
+	// The anonymous response is the authoritative seller catalog. Never return
+	// an authenticated buy-box-only response as though it were complete.
+	publicBody, err := fetchAODPage(ctx, api, rawURL, false)
 	if err != nil {
 		return nil, false, err
 	}
-	offers, authenticatedCount, authenticatedParseErr := parseAODOffers(body, s.currency, api.marketplaceID)
+	publicOffers, publicCount, err := parseAODOffers(publicBody, s.currency, api.marketplaceID)
+	if err != nil {
+		return nil, false, err
+	}
 
 	// Amazon Business sessions can collapse AOD to the account-selected offer.
-	// Merge the anonymous catalog view so alternate sellers remain visible while
-	// preserving any account-specific offer and price returned above.
-	publicBody, publicFetchErr := fetchAODPage(ctx, api, rawURL, false)
-	if publicFetchErr != nil {
-		if authenticatedParseErr != nil {
-			return nil, false, authenticatedParseErr
-		}
-		return offers, authenticatedCount < aodPageSize, nil
+	// Merge it when available, but a transient authenticated-page failure must
+	// not hide the complete public catalog.
+	authenticatedBody, authenticatedFetchErr := fetchAODPage(ctx, api, rawURL, true)
+	if authenticatedFetchErr != nil {
+		return publicOffers, publicCount < aodPageSize, nil
 	}
-	publicOffers, publicCount, publicParseErr := parseAODOffers(publicBody, s.currency, api.marketplaceID)
-	if publicParseErr != nil {
-		if authenticatedParseErr != nil {
-			return nil, false, authenticatedParseErr
-		}
-		return offers, authenticatedCount < aodPageSize, nil
+	authenticatedOffers, _, authenticatedParseErr := parseAODOffers(authenticatedBody, s.currency, api.marketplaceID)
+	if authenticatedParseErr != nil {
+		return publicOffers, publicCount < aodPageSize, nil
 	}
-	for i := range publicOffers {
-		publicOffers[i].IsBuyBox = false
+	if len(authenticatedOffers) > 0 {
+		for i := range publicOffers {
+			publicOffers[i].IsBuyBox = false
+		}
 	}
 
-	return mergeAODOffers(offers, publicOffers), publicCount < aodPageSize, nil
+	return mergeAODOffers(authenticatedOffers, publicOffers), publicCount < aodPageSize, nil
 }
 
 func fetchAODPage(ctx context.Context, api *tvssClient, rawURL string, authenticated bool) ([]byte, error) {
