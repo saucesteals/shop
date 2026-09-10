@@ -37,11 +37,6 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 		return nil, shop.Errorf(shop.ErrInvalidInput, "Amazon offers support pages 1–100")
 	}
 
-	api, err := s.tvssAPI()
-	if err != nil {
-		return nil, err
-	}
-
 	// Amazon serves fixed ten-offer batches. Replay them to expose stable logical
 	// pages for arbitrary caller page sizes without skipping offers.
 	start, end := (q.Page-1)*q.PageSize, q.Page*q.PageSize
@@ -52,7 +47,7 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 	seen := make(map[string]bool)
 	position := 0
 	for amazonPage := 1; position <= end; amazonPage++ {
-		offers, exhausted, err := s.fetchAODOffers(ctx, api, productID, amazonPage)
+		offers, exhausted, err := s.fetchAODOffers(ctx, productID, amazonPage)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +77,7 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 	return result, nil
 }
 
-func (s *Store) fetchAODOffers(ctx context.Context, api *tvssClient, productID string, page int) ([]shop.Offer, bool, error) {
+func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) ([]shop.Offer, bool, error) {
 	params := url.Values{
 		"asin": {productID},
 	}
@@ -92,47 +87,20 @@ func (s *Store) fetchAODOffers(ctx context.Context, api *tvssClient, productID s
 	}
 	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
 
-	// The anonymous response is the authoritative seller catalog. Never return
-	// an authenticated buy-box-only response as though it were complete.
-	publicBody, err := fetchAODPage(ctx, api, rawURL, false)
+	body, err := s.fetchAODPage(ctx, rawURL)
 	if err != nil {
 		return nil, false, err
 	}
-	publicOffers, publicCount, err := parseAODOffers(publicBody, s.currency, api.marketplaceID)
+	offers, count, err := parseAODOffers(body, s.currency, s.marketplaceID)
 	if err != nil {
 		return nil, false, err
 	}
 
-	// Amazon Business sessions can collapse AOD to the account-selected offer.
-	// Merge it when available, but a transient authenticated-page failure must
-	// not hide the complete public catalog.
-	authenticatedBody, authenticatedFetchErr := fetchAODPage(ctx, api, rawURL, true)
-	if authenticatedFetchErr != nil {
-		return publicOffers, publicCount < aodPageSize, nil
-	}
-	authenticatedOffers, _, authenticatedParseErr := parseAODOffers(authenticatedBody, s.currency, api.marketplaceID)
-	if authenticatedParseErr != nil {
-		return publicOffers, publicCount < aodPageSize, nil
-	}
-	if len(authenticatedOffers) > 0 {
-		for i := range publicOffers {
-			publicOffers[i].IsBuyBox = false
-		}
-	}
-
-	return mergeAODOffers(authenticatedOffers, publicOffers), publicCount < aodPageSize, nil
+	return offers, count < aodPageSize, nil
 }
 
-func fetchAODPage(ctx context.Context, api *tvssClient, rawURL string, authenticated bool) ([]byte, error) {
-	var (
-		req *http.Request
-		err error
-	)
-	if authenticated {
-		req, err = api.newRequest(ctx, http.MethodGet, rawURL, nil)
-	} else {
-		req, err = http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	}
+func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrInternal, "build Amazon offers request: %v", err)
 	}
@@ -140,13 +108,7 @@ func fetchAODPage(ctx context.Context, api *tvssClient, rawURL string, authentic
 	req.Header.Set("Accept", "text/html")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
-	client := api.http
-	if !authenticated {
-		clone := *api.http
-		clone.Jar = nil
-		client = &clone
-	}
-	resp, err := client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "Amazon offers request: %v", err)
 	}
@@ -326,27 +288,6 @@ func parseAODCondition(value string) shop.OfferCondition {
 	default:
 		return shop.ConditionNew
 	}
-}
-
-func mergeAODOffers(primary, additional []shop.Offer) []shop.Offer {
-	seen := make(map[string]bool, len(primary)+len(additional))
-	merged := make([]shop.Offer, 0, len(primary)+len(additional))
-	appendUnique := func(offer shop.Offer) {
-		key := aodOfferKey(offer)
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		merged = append(merged, offer)
-	}
-	for _, offer := range primary {
-		appendUnique(offer)
-	}
-	for _, offer := range additional {
-		appendUnique(offer)
-	}
-
-	return merged
 }
 
 func aodOfferKey(offer shop.Offer) string {
