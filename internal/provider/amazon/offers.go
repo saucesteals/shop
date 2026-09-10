@@ -20,17 +20,69 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 	if err := validateASIN(productID); err != nil {
 		return nil, err
 	}
+	q := shop.OffersQuery{}
+	if query != nil {
+		q = *query
+	}
+	if q.Page < 0 || q.PageSize < 0 || q.PageSize > 100 {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "page must be positive and page-size must be between 1 and 100")
+	}
+	if q.Page == 0 {
+		q.Page = 1
+	}
+	if q.PageSize == 0 {
+		q.PageSize = aodPageSize
+	}
+	if q.Page > 100 {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "Amazon offers support pages 1–100")
+	}
 
 	api, err := s.tvssAPI()
 	if err != nil {
 		return nil, err
 	}
 
-	page := 1
-	if query != nil && query.Page > 1 {
-		page = query.Page
+	// Amazon serves fixed ten-offer batches. Replay them to expose stable logical
+	// pages for arbitrary caller page sizes without skipping offers.
+	start, end := (q.Page-1)*q.PageSize, q.Page*q.PageSize
+	result := &shop.OffersResult{
+		Offers: []shop.Offer{},
+		Page:   q.Page,
 	}
+	seen := make(map[string]bool)
+	position := 0
+	for amazonPage := 1; position <= end; amazonPage++ {
+		offers, exhausted, err := s.fetchAODOffers(ctx, api, productID, amazonPage)
+		if err != nil {
+			return nil, err
+		}
 
+		newOffers := 0
+		for _, offer := range offers {
+			key := aodOfferKey(offer)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			newOffers++
+			if q.Condition != shop.ConditionAny && offer.Condition != q.Condition {
+				continue
+			}
+			if position >= start && position < end {
+				result.Offers = append(result.Offers, offer)
+			}
+			position++
+		}
+		if exhausted || newOffers == 0 {
+			break
+		}
+	}
+	result.HasMore = position > end
+
+	return result, nil
+}
+
+func (s *Store) fetchAODOffers(ctx context.Context, api *tvssClient, productID string, page int) ([]shop.Offer, bool, error) {
 	params := url.Values{
 		"asin": {productID},
 	}
@@ -38,49 +90,36 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 		params.Set("isonlyrenderofferlist", "true")
 		params.Set("pageno", fmt.Sprintf("%d", page))
 	}
-
 	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
+
 	body, err := fetchAODPage(ctx, api, rawURL, true)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	offers, offerCount, authenticatedParseErr := parseAODOffers(body, s.currency, api.marketplaceID)
+	offers, authenticatedCount, authenticatedParseErr := parseAODOffers(body, s.currency, api.marketplaceID)
 
 	// Amazon Business sessions can collapse AOD to the account-selected offer.
 	// Merge the anonymous catalog view so alternate sellers remain visible while
 	// preserving any account-specific offer and price returned above.
-	publicBody, err := fetchAODPage(ctx, api, rawURL, false)
-	if err != nil && authenticatedParseErr != nil {
-		return nil, authenticatedParseErr
-	}
-	if err == nil {
-		publicOffers, publicCount, publicParseErr := parseAODOffers(publicBody, s.currency, api.marketplaceID)
-		if publicParseErr != nil && authenticatedParseErr != nil {
-			return nil, authenticatedParseErr
+	publicBody, publicFetchErr := fetchAODPage(ctx, api, rawURL, false)
+	if publicFetchErr != nil {
+		if authenticatedParseErr != nil {
+			return nil, false, authenticatedParseErr
 		}
-		if publicParseErr == nil {
-			for i := range publicOffers {
-				publicOffers[i].IsBuyBox = false
-			}
-			offers = mergeAODOffers(offers, publicOffers)
-			offerCount = max(offerCount, publicCount)
-		}
+		return offers, authenticatedCount < aodPageSize, nil
 	}
-	if query != nil && query.Condition != shop.ConditionAny {
-		offers = filterOffersByCondition(offers, query.Condition)
+	publicOffers, publicCount, publicParseErr := parseAODOffers(publicBody, s.currency, api.marketplaceID)
+	if publicParseErr != nil {
+		if authenticatedParseErr != nil {
+			return nil, false, authenticatedParseErr
+		}
+		return offers, authenticatedCount < aodPageSize, nil
+	}
+	for i := range publicOffers {
+		publicOffers[i].IsBuyBox = false
 	}
 
-	hasMore := offerCount >= aodPageSize
-	if query != nil && query.PageSize > 0 && len(offers) > query.PageSize {
-		offers = offers[:query.PageSize]
-		hasMore = true
-	}
-
-	return &shop.OffersResult{
-		Offers:  offers,
-		Page:    page,
-		HasMore: hasMore,
-	}, nil
+	return mergeAODOffers(offers, publicOffers), publicCount < aodPageSize, nil
 }
 
 func fetchAODPage(ctx context.Context, api *tvssClient, rawURL string, authenticated bool) ([]byte, error) {
@@ -254,7 +293,12 @@ func sellerIDFromNode(node *html.Node) string {
 func offerIDFromNode(node *html.Node) string {
 	for _, input := range reviewElements(node, "input") {
 		if strings.HasSuffix(reviewAttr(input, "name"), "[offerListingId]") {
-			return reviewAttr(input, "value")
+			raw := reviewAttr(input, "value")
+			offerID, err := url.PathUnescape(raw)
+			if err != nil {
+				return raw
+			}
+			return offerID
 		}
 	}
 
@@ -283,22 +327,11 @@ func parseAODCondition(value string) shop.OfferCondition {
 	}
 }
 
-func filterOffersByCondition(offers []shop.Offer, condition shop.OfferCondition) []shop.Offer {
-	filtered := make([]shop.Offer, 0, len(offers))
-	for _, offer := range offers {
-		if offer.Condition == condition {
-			filtered = append(filtered, offer)
-		}
-	}
-
-	return filtered
-}
-
 func mergeAODOffers(primary, additional []shop.Offer) []shop.Offer {
 	seen := make(map[string]bool, len(primary)+len(additional))
 	merged := make([]shop.Offer, 0, len(primary)+len(additional))
 	appendUnique := func(offer shop.Offer) {
-		key := fmt.Sprintf("%s\x00%s\x00%d\x00%s", offer.Seller.ID, offer.Seller.Name, offer.Price.Amount, offer.Condition)
+		key := aodOfferKey(offer)
 		if seen[key] {
 			return
 		}
@@ -313,4 +346,20 @@ func mergeAODOffers(primary, additional []shop.Offer) []shop.Offer {
 	}
 
 	return merged
+}
+
+func aodOfferKey(offer shop.Offer) string {
+	if offer.ID != "" {
+		return "id\x00" + offer.ID
+	}
+
+	shipping := ""
+	if offer.Shipping != nil {
+		shipping = fmt.Sprintf("%s\x00%s\x00%s", offer.Shipping.From, offer.Shipping.Description, offer.Shipping.Speed)
+		if offer.Shipping.Price != nil {
+			shipping += fmt.Sprintf("\x00%d\x00%s", offer.Shipping.Price.Amount, offer.Shipping.Price.Currency)
+		}
+	}
+
+	return fmt.Sprintf("fallback\x00%s\x00%s\x00%d\x00%s\x00%s\x00%s", offer.Seller.ID, offer.Seller.Name, offer.Price.Amount, offer.Price.Currency, offer.Condition, shipping)
 }
