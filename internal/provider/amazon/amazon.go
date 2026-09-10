@@ -77,12 +77,16 @@ func (p *Provider) DetectCost() shop.DetectCost { return shop.DetectCostFree }
 // Store creates an Amazon Store instance. configDir is used for auth file I/O.
 func (p *Provider) Store(_ context.Context, handle string, configDir string) (shop.Store, error) {
 	info := supportedDomains[handle]
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
 
 	s := &Store{
-		handle:        handle,
-		configDir:     configDir,
-		client:        &http.Client{Timeout: httpTimeout},
-		offersClient:  newOffersHTTPClient(),
+		handle:    handle,
+		configDir: configDir,
+		client: &http.Client{
+			Transport: &decodingTransport{base: transport},
+			Timeout:   httpTimeout,
+		},
 		currency:      info.Currency,
 		marketplaceID: info.MarketplaceID,
 	}
@@ -96,25 +100,12 @@ type Store struct {
 	handle        string
 	configDir     string
 	client        *http.Client
-	offersClient  *http.Client
 	cart          *cartImpl
 	currency      string
 	marketplaceID string
 
 	mu   sync.Mutex
 	tvss *tvssClient
-}
-
-func newOffersHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// Amazon's AOD endpoint rejects the automatic Accept-Encoding header sent
-	// by Go's default transport. Disable negotiation so the header is omitted.
-	transport.DisableCompression = true
-
-	return &http.Client{
-		Transport: transport,
-		Timeout:   httpTimeout,
-	}
 }
 
 // tvssAPI returns the tvssClient, initializing it from auth state on first

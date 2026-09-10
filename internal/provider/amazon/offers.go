@@ -2,7 +2,6 @@ package amazon
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,27 +113,13 @@ func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error)
 	req.Header.Set("Accept", "text/html")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
-	resp, err := s.offersClient.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "Amazon offers request: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	reader := io.Reader(resp.Body)
-	switch strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))) {
-	case "", "identity":
-	case "gzip":
-		compressed, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, shop.Errorf(shop.ErrStoreError, "decode Amazon offers response: %v", err)
-		}
-		defer func() { _ = compressed.Close() }()
-		reader = compressed
-	default:
-		return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers returned unsupported content encoding")
-	}
-
-	body, err := io.ReadAll(io.LimitReader(reader, aodMaxBodyBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, aodMaxBodyBytes+1))
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "read Amazon offers response: %v", err)
 	}
