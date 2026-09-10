@@ -2,7 +2,6 @@ package amazon
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -16,49 +15,6 @@ import (
 
 	"github.com/saucesteals/shop"
 )
-
-// decodingTransport keeps compression behavior consistent across Amazon's
-// web and API endpoints. Amazon may return gzip without negotiating it, so
-// the underlying transport omits Accept-Encoding and responses are decoded
-// here instead of relying on net/http's conditional automatic behavior.
-type decodingTransport struct {
-	base http.RoundTripper
-}
-
-func (t *decodingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.base.RoundTrip(req)
-	if err != nil || !strings.EqualFold(strings.TrimSpace(resp.Header.Get("Content-Encoding")), "gzip") {
-		return resp, err
-	}
-
-	compressed := resp.Body
-	decoded, err := gzip.NewReader(compressed)
-	if err != nil {
-		_ = compressed.Close()
-		return nil, fmt.Errorf("decode gzip response: %w", err)
-	}
-	resp.Body = &gzipReadCloser{Reader: decoded, compressed: compressed}
-	resp.Header.Del("Content-Encoding")
-	resp.Header.Del("Content-Length")
-	resp.ContentLength = -1
-	resp.Uncompressed = true
-
-	return resp, nil
-}
-
-type gzipReadCloser struct {
-	*gzip.Reader
-	compressed io.Closer
-}
-
-func (r *gzipReadCloser) Close() error {
-	decodeErr := r.Reader.Close()
-	compressedErr := r.compressed.Close()
-	if decodeErr != nil {
-		return decodeErr
-	}
-	return compressedErr
-}
 
 // asinPattern validates that a product ID is a well-formed 10-character
 // Amazon Standard Identification Number.

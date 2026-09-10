@@ -77,16 +77,17 @@ func (p *Provider) DetectCost() shop.DetectCost { return shop.DetectCostFree }
 // Store creates an Amazon Store instance. configDir is used for auth file I/O.
 func (p *Provider) Store(_ context.Context, handle string, configDir string) (shop.Store, error) {
 	info := supportedDomains[handle]
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DisableCompression = true
+	aodTransport := http.DefaultTransport.(*http.Transport).Clone()
+	// AOD behaves inconsistently when Go injects Accept-Encoding. Keep this
+	// exception isolated so every other Amazon request retains normal transport
+	// behavior and automatic compression.
+	aodTransport.DisableCompression = true
 
 	s := &Store{
-		handle:    handle,
-		configDir: configDir,
-		client: &http.Client{
-			Transport: &decodingTransport{base: transport},
-			Timeout:   httpTimeout,
-		},
+		handle:        handle,
+		configDir:     configDir,
+		client:        &http.Client{Timeout: httpTimeout},
+		aodClient:     &http.Client{Transport: aodTransport, Timeout: httpTimeout},
 		currency:      info.Currency,
 		marketplaceID: info.MarketplaceID,
 	}
@@ -100,6 +101,7 @@ type Store struct {
 	handle        string
 	configDir     string
 	client        *http.Client
+	aodClient     *http.Client
 	cart          *cartImpl
 	currency      string
 	marketplaceID string
