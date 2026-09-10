@@ -1,5 +1,12 @@
 package shop
 
+// CartAddOptions controls how a product is added to a cart.
+type CartAddOptions struct {
+	// OfferID selects a specific offer returned by Store.Offers. Empty lets the
+	// provider select its default offer.
+	OfferID string `json:"offerId,omitempty"`
+}
+
 // CartContents is a snapshot of the current cart state.
 type CartContents struct {
 	Items    []CartEntry `json:"items"`
