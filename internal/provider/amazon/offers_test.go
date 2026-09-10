@@ -154,7 +154,7 @@ func TestParseAODOffer(t *testing.T) {
 func testOfferStore(transport http.RoundTripper) *Store {
 	return &Store{
 		handle:        "amazon.com",
-		client:        &http.Client{Transport: transport},
+		offersClient:  &http.Client{Transport: transport},
 		currency:      "USD",
 		marketplaceID: "ATVPDKIKX0DER",
 	}
