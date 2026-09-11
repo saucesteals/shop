@@ -84,15 +84,20 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 
 func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) ([]shop.Offer, bool, error) {
 	params := url.Values{
-		"asin":       {productID},
-		"isAod":      {"1"},
-		"experience": {"aod"},
+		"asin":                        {productID},
+		"m":                           {""},
+		"qid":                         {""},
+		"smid":                        {""},
+		"sourcecustomerorglistid":     {""},
+		"sourcecustomerorglistitemid": {""},
+		"sr":                          {""},
+		"pc":                          {"dp"},
 	}
 	if page > 1 {
 		params.Set("isonlyrenderofferlist", "true")
 		params.Set("pageno", fmt.Sprintf("%d", page))
 	}
-	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
+	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain/ref=dp_aod_NEW_mbc?%s", s.handle, params.Encode())
 	body, err := s.fetchAODPage(ctx, rawURL)
 	if err != nil {
 		return nil, false, err
@@ -138,15 +143,6 @@ func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error)
 	return body, nil
 }
 
-func (s *Store) sessionCookies() []*http.Cookie {
-	state, err := s.loadAuth()
-	if err != nil || state == nil || !state.isAuthenticated() {
-		return nil
-	}
-
-	return state.httpCookies()
-}
-
 func parseAODOffers(body []byte, currency, marketplaceID string) ([]shop.Offer, int, error) {
 	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
@@ -154,7 +150,7 @@ func parseAODOffers(body []byte, currency, marketplaceID string) ([]shop.Offer, 
 	}
 
 	pinned := reviewFind(doc, "id", "aod-pinned-offer")
-	other := reviewFind(doc, "class", "aod-other-offer-block")
+	other := aodListOffers(doc)
 	if len(pinned) == 0 && len(other) == 0 {
 		return nil, 0, shop.Errorf(shop.ErrStoreError, "Amazon returned unrecognized offers content")
 	}
@@ -177,6 +173,27 @@ func parseAODOffers(body []byte, currency, marketplaceID string) ([]shop.Offer, 
 	}
 
 	return offers, len(other), nil
+}
+
+func aodListOffers(doc *html.Node) []*html.Node {
+	if blocks := reviewFind(doc, "class", "aod-other-offer-block"); len(blocks) > 0 {
+		return blocks
+	}
+	list := reviewFind(doc, "id", "aod-offer-list")
+	if len(list) == 0 {
+		return nil
+	}
+
+	return reviewFind(list[0], "class", "aod-information-block")
+}
+
+func (s *Store) sessionCookies() []*http.Cookie {
+	state, err := s.loadAuth()
+	if err != nil || state == nil || !state.isAuthenticated() {
+		return nil
+	}
+
+	return state.httpCookies()
 }
 
 func parseAODOffer(node *html.Node, currency, marketplaceID string) (shop.Offer, error) {
