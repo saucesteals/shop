@@ -84,15 +84,20 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 
 func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) ([]shop.Offer, bool, error) {
 	params := url.Values{
-		"asin":       {productID},
-		"isAod":      {"1"},
-		"experience": {"aod"},
+		"asin":                        {productID},
+		"m":                           {""},
+		"qid":                         {""},
+		"smid":                        {""},
+		"sourcecustomerorglistid":     {""},
+		"sourcecustomerorglistitemid": {""},
+		"sr":                          {""},
+		"pc":                          {"dp"},
 	}
 	if page > 1 {
 		params.Set("isonlyrenderofferlist", "true")
 		params.Set("pageno", fmt.Sprintf("%d", page))
 	}
-	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
+	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain/ref=dp_aod_NEW_mbc?%s", s.handle, params.Encode())
 	body, err := s.fetchAODPage(ctx, rawURL)
 	if err != nil {
 		return nil, false, err
@@ -108,7 +113,6 @@ func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) 
 func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error) {
 	resp, err := s.client.do(ctx, http.MethodGet, rawURL, nil, requestOptions{
 		profile: profileAOD,
-		cookies: s.sessionCookies(),
 	})
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "Amazon offers request: %v", err)
@@ -136,15 +140,6 @@ func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error)
 	}
 
 	return body, nil
-}
-
-func (s *Store) sessionCookies() []*http.Cookie {
-	state, err := s.loadAuth()
-	if err != nil || state == nil || !state.isAuthenticated() {
-		return nil
-	}
-
-	return state.httpCookies()
 }
 
 func parseAODOffers(body []byte, currency, marketplaceID string) ([]shop.Offer, int, error) {
