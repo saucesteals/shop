@@ -35,14 +35,14 @@ const (
 
 // Device registration constants — iOS (Amazon Shopping app).
 const (
-	defaultDeviceType    = "A3NWHXTQ4EBCZS"
-	defaultDeviceDomain  = "Device"
-	defaultAppName       = "Amazon Shopping"
-	defaultAppVersion    = "24.20.2"
-	defaultDeviceModel   = "iPhone"
-	defaultOSVersion     = "17.6.1"
-	defaultSoftwareVer   = "1"
-	serialBytes          = 12
+	defaultDeviceType   = "A3NWHXTQ4EBCZS"
+	defaultDeviceDomain = "Device"
+	defaultAppName      = "Amazon Shopping"
+	defaultAppVersion   = "24.20.2"
+	defaultDeviceModel  = "iPhone"
+	defaultOSVersion    = "17.6.1"
+	defaultSoftwareVer  = "1"
+	serialBytes         = 12
 )
 
 // HTTP constants.
@@ -105,7 +105,7 @@ type registerPayload struct {
 // registerAuthData carries the authentication method and code pair for
 // device registration.
 type registerAuthData struct {
-	UseGlobalAuthentication string          `json:"use_global_authentication"`
+	UseGlobalAuthentication string           `json:"use_global_authentication"`
 	CodePair                registerCodePair `json:"code_pair"`
 }
 
@@ -212,19 +212,16 @@ func generateDevice() (device, error) {
 // generateCodePair creates a code pair for the given device by calling the
 // Amazon auth code pair endpoint. Validates that the response contains all
 // required fields before returning.
-func generateCodePair(ctx context.Context, client *http.Client, d device) (*codePairResponse, error) {
+func generateCodePair(ctx context.Context, client *amazonClient, d device) (*codePairResponse, error) {
 	body, err := json.Marshal(codePairRequest{CodeData: d})
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrInternal, "marshal code pair request: %v", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, codePairURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "build code pair request: %v", err)
-	}
-	setAuthHeaders(req)
-
-	resp, err := client.Do(req)
+	resp, err := client.do(ctx, http.MethodPost, codePairURL, bytes.NewReader(body), requestOptions{
+		profile: profileJSON,
+		headers: authHeaders(),
+	})
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "code pair request: %v", err)
 	}
@@ -257,7 +254,7 @@ func generateCodePair(ctx context.Context, client *http.Client, d device) (*code
 // the code. Returns nil, nil if the user has not yet completed auth (the
 // authorization_pending case). Returns a *shop.Error for actual failures
 // (rate limits, server errors, malformed requests).
-func registerDevice(ctx context.Context, client *http.Client, d device, publicCode, privateCode string) (*registrationResult, error) {
+func registerDevice(ctx context.Context, client *amazonClient, d device, publicCode, privateCode string) (*registrationResult, error) {
 	payload := buildRegisterPayload(d, publicCode, privateCode)
 
 	body, err := json.Marshal(payload)
@@ -265,13 +262,10 @@ func registerDevice(ctx context.Context, client *http.Client, d device, publicCo
 		return nil, shop.Errorf(shop.ErrInternal, "marshal register request: %v", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, registerURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "build register request: %v", err)
-	}
-	setAuthHeaders(req)
-
-	resp, err := client.Do(req)
+	resp, err := client.do(ctx, http.MethodPost, registerURL, bytes.NewReader(body), requestOptions{
+		profile: profileJSON,
+		headers: authHeaders(),
+	})
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "register request: %v", err)
 	}
@@ -375,11 +369,14 @@ func buildRegisterPayload(d device, publicCode, privateCode string) registerPayl
 	}
 }
 
-// setAuthHeaders applies the standard Amazon auth headers to a request.
-func setAuthHeaders(req *http.Request) {
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", mobileUA)
-	req.Header.Set("x-amzn-identity-auth-domain", authDomain)
+// authHeaders returns the canonical Amazon device-auth headers.
+func authHeaders() http.Header {
+	headers := make(http.Header)
+	headers.Set("Content-Type", "application/json")
+	headers.Set("User-Agent", mobileUA)
+	headers.Set("x-amzn-identity-auth-domain", authDomain)
+
+	return headers
 }
 
 // truncateBody caps the response body length for inclusion in error messages

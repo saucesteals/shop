@@ -157,16 +157,10 @@ func (s *Store) searchASINs(ctx context.Context, api *tvssClient, keyword string
 
 	searchURL := fmt.Sprintf("https://www.%s/s?%s", s.handle, params.Encode())
 
-	req, err := api.newRequest(ctx, http.MethodGet, searchURL, nil)
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "build search request: %v", err)
-	}
-
-	req.Header.Set("User-Agent", mobileUA)
-	req.Header.Set("Accept", "text/html")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-
-	resp, err := api.http.Do(req)
+	resp, err := api.http.do(ctx, http.MethodGet, searchURL, nil, requestOptions{
+		profile: profileWeb,
+		cookies: api.cookies,
+	})
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "search request: %v", err)
 	}

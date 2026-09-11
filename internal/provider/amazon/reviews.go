@@ -133,29 +133,30 @@ func fetchReviewPage(ctx context.Context, api *tvssClient, target string, form u
 		method = http.MethodPost
 		reader = strings.NewReader(form.Encode())
 	}
-	req, err := api.newRequest(ctx, method, target, reader)
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "build reviews request")
-	}
-	req.Header.Set("User-Agent", mobileUA)
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept", "text/html")
+	headers := make(http.Header)
 	if form != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-		req.Header.Set("X-Requested-With", "XMLHttpRequest")
-		req.Header.Set("anti-csrftoken-a2z", csrf)
+		headers.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+		headers.Set("X-Requested-With", "XMLHttpRequest")
+		headers.Set("anti-csrftoken-a2z", csrf)
 	}
-	client := *api.http
-	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
-		if r.URL.Scheme != "https" || r.URL.Host != req.URL.Host || strings.HasPrefix(r.URL.Path, "/ap/") {
-			return http.ErrUseLastResponse
-		}
-		if len(via) >= 5 {
-			return http.ErrUseLastResponse
-		}
-		return nil
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrInternal, "parse reviews URL")
 	}
-	resp, err := client.Do(req)
+	resp, err := api.http.do(ctx, method, target, reader, requestOptions{
+		profile: profileWeb,
+		cookies: api.cookies,
+		headers: headers,
+		checkRedirect: func(r *http.Request, via []*http.Request) error {
+			if r.URL.Scheme != "https" || r.URL.Host != targetURL.Host || strings.HasPrefix(r.URL.Path, "/ap/") {
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 5 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	})
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrNetwork, "reviews request failed")
 	}

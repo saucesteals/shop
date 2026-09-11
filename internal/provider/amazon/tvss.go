@@ -9,35 +9,35 @@ import "encoding/json"
 
 // tvssProduct is the full product response from GET /products/{asin}.
 type tvssProduct struct {
-	ASIN                     string                    `json:"asin"`
-	Title                    string                    `json:"title"`
-	ByLine                   string                    `json:"byLine"`
-	Price                    flexString                    `json:"price"`
-	ListPrice                flexString                    `json:"listPrice"`
-	PricePerUnit             *tvssPricePerUnit         `json:"pricePerUnit,omitempty"`
-	ShippingDetails          *tvssShippingDetails      `json:"shippingDetails,omitempty"`
-	Badge                    *tvssBadge                `json:"badge,omitempty"`
-	CustomerReviewsCount     int                       `json:"customerReviewsCount"`
-	AverageOverallRating     float64                   `json:"averageOverallRating"`
-	ProductAvailability      *tvssAvailabilityDetails  `json:"productAvailabilityDetails,omitempty"`
-	OfferID                  string                    `json:"offerId"`
-	ProductGroupID           string                    `json:"productGroupId"`
-	VariationParentASIN      string                    `json:"variationParentAsin"`
-	VariationPriceRange      flexString                    `json:"variationPriceRange"`
-	ProductImageURLs         []string                  `json:"productImageUrls"`
-	ProductVideos            []tvssProductVideo        `json:"productVideos"`
-	VariationLabels          []tvssVariationLabel      `json:"variationLabels"`
-	MerchantInfo             *tvssMerchantInfo         `json:"merchantInfo,omitempty"`
-	Details                  map[string]string         `json:"details"`
-	Description              map[string][]string       `json:"description"`
-	PrimeExclusive           bool                      `json:"primeExclusive"`
-	MediaRating              string                    `json:"mediaRating"`
+	ASIN                 string                   `json:"asin"`
+	Title                string                   `json:"title"`
+	ByLine               string                   `json:"byLine"`
+	Price                flexString               `json:"price"`
+	ListPrice            flexString               `json:"listPrice"`
+	PricePerUnit         *tvssPricePerUnit        `json:"pricePerUnit,omitempty"`
+	ShippingDetails      *tvssShippingDetails     `json:"shippingDetails,omitempty"`
+	Badge                *tvssBadge               `json:"badge,omitempty"`
+	CustomerReviewsCount int                      `json:"customerReviewsCount"`
+	AverageOverallRating float64                  `json:"averageOverallRating"`
+	ProductAvailability  *tvssAvailabilityDetails `json:"productAvailabilityDetails,omitempty"`
+	OfferID              string                   `json:"offerId"`
+	ProductGroupID       string                   `json:"productGroupId"`
+	VariationParentASIN  string                   `json:"variationParentAsin"`
+	VariationPriceRange  flexString               `json:"variationPriceRange"`
+	ProductImageURLs     []string                 `json:"productImageUrls"`
+	ProductVideos        []tvssProductVideo       `json:"productVideos"`
+	VariationLabels      []tvssVariationLabel     `json:"variationLabels"`
+	MerchantInfo         *tvssMerchantInfo        `json:"merchantInfo,omitempty"`
+	Details              map[string]string        `json:"details"`
+	Description          map[string][]string      `json:"description"`
+	PrimeExclusive       bool                     `json:"primeExclusive"`
+	MediaRating          string                   `json:"mediaRating"`
 }
 
 type tvssPricePerUnit struct {
 	UnitPrice flexString `json:"unitPrice"`
-	BaseValue string `json:"baseValue"`
-	BaseUnit  string `json:"baseUnit"`
+	BaseValue string     `json:"baseValue"`
+	BaseUnit  string     `json:"baseUnit"`
 }
 
 type tvssShippingDetails struct {
@@ -82,18 +82,18 @@ type tvssBasicProductEntity struct {
 }
 
 type tvssBasicProduct struct {
-	ASIN                 string   `json:"asin"`
-	Title                string   `json:"title"`
-	ImageURL             string   `json:"imageUrl"`
-	ListPrice            flexString   `json:"listPrice"`
-	AverageOverallRating float64  `json:"averageOverallRating"`
-	CustomerReviewsCount int      `json:"customerReviewsCount"`
-	ProductImageURLs     []string `json:"productImageUrls"`
-	VariationPriceRange  flexString   `json:"variationPriceRange"`
+	ASIN                 string     `json:"asin"`
+	Title                string     `json:"title"`
+	ImageURL             string     `json:"imageUrl"`
+	ListPrice            flexString `json:"listPrice"`
+	AverageOverallRating float64    `json:"averageOverallRating"`
+	CustomerReviewsCount int        `json:"customerReviewsCount"`
+	ProductImageURLs     []string   `json:"productImageUrls"`
+	VariationPriceRange  flexString `json:"variationPriceRange"`
 }
 
 type tvssBasicOffer struct {
-	Price flexString     `json:"price"`
+	Price flexString `json:"price"`
 	Badge *tvssBadge `json:"badge,omitempty"`
 }
 
@@ -108,15 +108,15 @@ type tvssBasicProductsResponse struct {
 
 // tvssReviewsResponse is the response from GET /products/{asin}/customer-reviews.
 type tvssReviewsResponse struct {
-	OneStarCount       int                    `json:"oneStarCount"`
-	TwoStarCount       int                    `json:"twoStarCount"`
-	ThreeStarCount     int                    `json:"threeStarCount"`
-	FourStarCount      int                    `json:"fourStarCount"`
-	FiveStarCount      int                    `json:"fiveStarCount"`
+	OneStarCount       int                     `json:"oneStarCount"`
+	TwoStarCount       int                     `json:"twoStarCount"`
+	ThreeStarCount     int                     `json:"threeStarCount"`
+	FourStarCount      int                     `json:"fourStarCount"`
+	FiveStarCount      int                     `json:"fiveStarCount"`
 	ProductStarRatings *tvssProductStarRatings `json:"productStarRatings"`
-	Reviews            []tvssReview           `json:"reviews"`
-	PageNext           string                 `json:"pageNext"`
-	UsingPageNext      bool                   `json:"usingPageNext"`
+	Reviews            []tvssReview            `json:"reviews"`
+	PageNext           string                  `json:"pageNext"`
+	UsingPageNext      bool                    `json:"usingPageNext"`
 }
 
 type tvssProductStarRatings struct {
@@ -130,15 +130,15 @@ type tvssProductStarRatings struct {
 }
 
 type tvssReview struct {
-	AuthorName         string             `json:"authorName"`
-	Title              string             `json:"title"`
-	Text               string             `json:"text"`
-	OverallRating      *float64           `json:"overallRating"`
-	SubmissionDate     string             `json:"submissionDate"` // epoch millis or date string
-	IsVerifiedPurchase *bool              `json:"isVerifiedPurchase"`
-	IsVine             *bool              `json:"isVine"`
-	ImageURLs          []tvssReviewImage  `json:"imageUrls"`
-	OriginDescription  string             `json:"originDescription"`
+	AuthorName         string            `json:"authorName"`
+	Title              string            `json:"title"`
+	Text               string            `json:"text"`
+	OverallRating      *float64          `json:"overallRating"`
+	SubmissionDate     string            `json:"submissionDate"` // epoch millis or date string
+	IsVerifiedPurchase *bool             `json:"isVerifiedPurchase"`
+	IsVine             *bool             `json:"isVine"`
+	ImageURLs          []tvssReviewImage `json:"imageUrls"`
+	OriginDescription  string            `json:"originDescription"`
 }
 
 type tvssReviewImage struct {
@@ -156,15 +156,15 @@ type tvssVariationsResponse struct {
 }
 
 type tvssVariationDimension struct {
-	DimensionKey   string   `json:"dimensionKey"`
-	DisplayString  string   `json:"displayString"`
-	Values         []string `json:"values"`
+	DimensionKey    string   `json:"dimensionKey"`
+	DisplayString   string   `json:"displayString"`
+	Values          []string `json:"values"`
 	SwatchImageURLs []string `json:"swatchImageUrls"`
 }
 
 type tvssVariation struct {
 	ASIN             string     `json:"asin"`
-	BuyingPrice      flexString     `json:"buyingPrice"`
+	BuyingPrice      flexString `json:"buyingPrice"`
 	Badge            *tvssBadge `json:"badge,omitempty"`
 	VariationIndices []int      `json:"variationIndices"`
 }
@@ -198,7 +198,7 @@ type tvssCartMessage struct {
 type tvssCartResponse struct {
 	Items    []tvssCartItem    `json:"items"`
 	Messages []tvssCartMessage `json:"messages"`
-	Subtotal flexString            `json:"subtotal"`
+	Subtotal flexString        `json:"subtotal"`
 }
 
 type tvssCartItem struct {
@@ -207,7 +207,7 @@ type tvssCartItem struct {
 	OfferID          string     `json:"offerId"`
 	Title            string     `json:"title"`
 	ByLine           string     `json:"byLine"`
-	Price            flexString     `json:"price"`
+	Price            flexString `json:"price"`
 	ImageURL         string     `json:"imageUrl"`
 	Quantity         int        `json:"quantity"`
 	QuantityEditable bool       `json:"quantityEditable"`
@@ -244,19 +244,19 @@ type tvssPurchaseInitiateItem struct {
 // tvssPurchaseResponse is the response from POST /checkout/purchase/initiate
 // and also the base response for checkout state queries.
 type tvssPurchaseResponse struct {
-	PurchaseID           string              `json:"purchaseId"`
-	Destinations         *tvssDestinations   `json:"destinations,omitempty"`
-	PaymentMethods       *tvssPaymentMethods `json:"paymentMethods,omitempty"`
-	LineItems            *tvssLineItems      `json:"lineItems,omitempty"`
-	PurchaseTotals       *tvssPurchaseTotals `json:"purchaseTotals,omitempty"`
-	DeliveryGroups       *tvssDeliveryGroups `json:"deliveryGroups,omitempty"`
+	PurchaseID           string                    `json:"purchaseId"`
+	Destinations         *tvssDestinations         `json:"destinations,omitempty"`
+	PaymentMethods       *tvssPaymentMethods       `json:"paymentMethods,omitempty"`
+	LineItems            *tvssLineItems            `json:"lineItems,omitempty"`
+	PurchaseTotals       *tvssPurchaseTotals       `json:"purchaseTotals,omitempty"`
+	DeliveryGroups       *tvssDeliveryGroups       `json:"deliveryGroups,omitempty"`
 	PurchaseRestrictions []tvssPurchaseRestriction `json:"purchaseRestrictions,omitempty"`
-	PurchaseState        []string            `json:"purchaseState,omitempty"`
+	PurchaseState        []string                  `json:"purchaseState,omitempty"`
 }
 
 type tvssDestinations struct {
-	Destinations     []tvssDestination `json:"destinations"`
-	DestinationList  []tvssDestinationDetail `json:"destinationList"`
+	Destinations    []tvssDestination       `json:"destinations"`
+	DestinationList []tvssDestinationDetail `json:"destinationList"`
 }
 
 func (d *tvssDestinations) UnmarshalJSON(data []byte) error {
@@ -295,8 +295,8 @@ type tvssAddressDisplay struct {
 
 type tvssPaymentMethods struct {
 	CreditOrDebitCard *tvssCreditOrDebitCard `json:"creditOrDebitCard,omitempty"`
-	GiftCardAndPromo  *tvssGiftCard         `json:"giftCardAndPromo,omitempty"`
-	BankAccount       *tvssBankAccount      `json:"bankAccount,omitempty"`
+	GiftCardAndPromo  *tvssGiftCard          `json:"giftCardAndPromo,omitempty"`
+	BankAccount       *tvssBankAccount       `json:"bankAccount,omitempty"`
 }
 
 func (p *tvssPaymentMethods) UnmarshalJSON(data []byte) error {
@@ -305,11 +305,11 @@ func (p *tvssPaymentMethods) UnmarshalJSON(data []byte) error {
 }
 
 type tvssCreditOrDebitCard struct {
-	ID         string                 `json:"id"`
-	EndingIn   string                 `json:"endingIn"`
-	Issuer     flexString             `json:"issuer"`
-	Expiry     *tvssCardExpiry        `json:"expiry,omitempty"`
-	NameOnCard string                 `json:"nameOnCard"`
+	ID         string          `json:"id"`
+	EndingIn   string          `json:"endingIn"`
+	Issuer     flexString      `json:"issuer"`
+	Expiry     *tvssCardExpiry `json:"expiry,omitempty"`
+	NameOnCard string          `json:"nameOnCard"`
 }
 
 type tvssCardExpiry struct {
@@ -335,13 +335,13 @@ func (l *tvssLineItems) UnmarshalJSON(data []byte) error {
 }
 
 type tvssLineItem struct {
-	ASIN          string         `json:"asin"`
-	OfferID       string         `json:"offerId"`
-	Title         string         `json:"title"`
-	ByLine        string         `json:"byLine"`
+	ASIN          string             `json:"asin"`
+	OfferID       string             `json:"offerId"`
+	Title         string             `json:"title"`
+	ByLine        string             `json:"byLine"`
 	Price         flexString         `json:"price"`
-	ImageURL      string         `json:"imageUrl"`
-	Quantity      *int           `json:"quantity,omitempty"`
+	ImageURL      string             `json:"imageUrl"`
+	Quantity      *int               `json:"quantity,omitempty"`
 	LineItemPrice *tvssLineItemPrice `json:"lineItemPrice,omitempty"`
 }
 
@@ -362,8 +362,8 @@ type tvssDiscount struct {
 }
 
 type tvssPurchaseTotals struct {
-	PurchaseTotal     *tvssPurchaseTotal    `json:"purchaseTotal,omitempty"`
-	Subtotals         []tvssPurchaseSubtotal `json:"subtotals,omitempty"`
+	PurchaseTotal *tvssPurchaseTotal     `json:"purchaseTotal,omitempty"`
+	Subtotals     []tvssPurchaseSubtotal `json:"subtotals,omitempty"`
 }
 
 func (p *tvssPurchaseTotals) UnmarshalJSON(data []byte) error {
@@ -398,11 +398,11 @@ type tvssDeliveryGroup struct {
 }
 
 type tvssDeliveryOption struct {
-	ID           string `json:"id"`
+	ID            string `json:"id"`
 	DisplayString string `json:"displayString"`
-	DisplayName  string `json:"displayName"`
-	DisplayPrice string `json:"displayPrice"`
-	Selected     bool   `json:"selected"`
+	DisplayName   string `json:"displayName"`
+	DisplayPrice  string `json:"displayPrice"`
+	Selected      bool   `json:"selected"`
 }
 
 type tvssPurchaseRestriction struct {
@@ -443,7 +443,7 @@ func (r *tvssCheckoutOrdersResponse) UnmarshalJSON(data []byte) error {
 }
 
 type tvssCheckoutOrder struct {
-	ID         string                    `json:"id"`
+	ID         string                       `json:"id"`
 	ItemGroups []tvssCheckoutOrderItemGroup `json:"itemGroups"`
 }
 
@@ -454,5 +454,3 @@ type tvssCheckoutOrderItemGroup struct {
 type tvssCheckoutOrderItem struct {
 	Quantity int `json:"quantity"`
 }
-
-
