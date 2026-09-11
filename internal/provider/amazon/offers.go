@@ -9,15 +9,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/saucesteals/shop"
 	"golang.org/x/net/html"
 )
 
 const (
-	aodPageSize     = 10
-	aodMaxPages     = 100
-	aodMaxBodyBytes = 8 << 20
+	aodPageSize      = 10
+	aodMaxPages      = 100
+	aodMaxBodyBytes  = 8 << 20
+	aodMaxAttempts   = 4
+	aodRetryBaseWait = 200 * time.Millisecond
 )
 
 // Offers returns every offer on the requested Amazon All Offers Display page.
@@ -83,16 +86,7 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 }
 
 func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) ([]shop.Offer, bool, error) {
-	params := url.Values{
-		"asin": {productID},
-	}
-	if page > 1 {
-		params.Set("isonlyrenderofferlist", "true")
-		params.Set("pageno", fmt.Sprintf("%d", page))
-	}
-	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
-
-	body, err := s.fetchAODPage(ctx, rawURL)
+	body, err := s.fetchAODPage(ctx, aodURL(s.handle, productID, page))
 	if err != nil {
 		return nil, false, err
 	}
@@ -104,36 +98,92 @@ func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) 
 	return offers, count < aodPageSize, nil
 }
 
+func aodURL(handle, productID string, page int) string {
+	params := url.Values{
+		"asin":       {productID},
+		"isAod":      {"1"},
+		"experience": {"aod"},
+	}
+	if page > 1 {
+		params.Set("isonlyrenderofferlist", "true")
+		params.Set("pageno", fmt.Sprintf("%d", page))
+	}
+
+	return fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", handle, params.Encode())
+}
+
 func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error) {
+	var lastErr error
+	for attempt := 1; attempt <= aodMaxAttempts; attempt++ {
+		body, status, err := s.doAODRequest(ctx, rawURL)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusServiceUnavailable && attempt < aodMaxAttempts {
+			lastErr = shop.Errorf(shop.ErrStoreError, "Amazon offers returned %d: %s", status, truncateBody(body))
+			if err := sleepAODRetry(ctx, attempt); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if status == http.StatusUnauthorized || status == http.StatusForbidden {
+			return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers access denied (%d)", status)
+		}
+		if status == http.StatusNotFound {
+			return nil, shop.Errorf(shop.ErrNotFound, "Amazon offers not found")
+		}
+		if status == http.StatusTooManyRequests {
+			return nil, shop.Errorf(shop.ErrRateLimited, "Amazon offers rate limited")
+		}
+		if status < 200 || status >= 300 {
+			return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers returned %d: %s", status, truncateBody(body))
+		}
+		if len(body) > aodMaxBodyBytes {
+			return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers response exceeded size limit")
+		}
+
+		return body, nil
+	}
+
+	return nil, lastErr
+}
+
+func (s *Store) doAODRequest(ctx context.Context, rawURL string) ([]byte, int, error) {
 	resp, err := s.client.do(ctx, http.MethodGet, rawURL, nil, requestOptions{
 		profile: profileAOD,
+		cookies: s.sessionCookies(),
 	})
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "Amazon offers request: %v", err)
+		return nil, 0, shop.Errorf(shop.ErrNetwork, "Amazon offers request: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, aodMaxBodyBytes+1))
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "read Amazon offers response: %v", err)
-	}
-	if len(body) > aodMaxBodyBytes {
-		return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers response exceeded size limit")
-	}
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers access denied (%d)", resp.StatusCode)
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, shop.Errorf(shop.ErrNotFound, "Amazon offers not found")
-	}
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, shop.Errorf(shop.ErrRateLimited, "Amazon offers rate limited")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, shop.Errorf(shop.ErrStoreError, "Amazon offers returned %d: %s", resp.StatusCode, truncateBody(body))
+		return nil, 0, shop.Errorf(shop.ErrNetwork, "read Amazon offers response: %v", err)
 	}
 
-	return body, nil
+	return body, resp.StatusCode, nil
+}
+
+func (s *Store) sessionCookies() []*http.Cookie {
+	state, err := s.loadAuth()
+	if err != nil || state == nil || !state.isAuthenticated() {
+		return nil
+	}
+
+	return state.httpCookies()
+}
+
+func sleepAODRetry(ctx context.Context, attempt int) error {
+	timer := time.NewTimer(aodRetryBaseWait * time.Duration(attempt))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return shop.Errorf(shop.ErrNetwork, "Amazon offers request: %v", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
 }
 
 func parseAODOffers(body []byte, currency, marketplaceID string) ([]shop.Offer, int, error) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,8 +14,12 @@ import (
 )
 
 type offerRoundTripper struct {
-	pages    map[string]string
-	requests []string
+	pages      map[string]string
+	requests   []string
+	urls       []string
+	cookies    []string
+	statusSeq  []int
+	statusHits int
 }
 
 func (t *offerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -22,6 +28,24 @@ func (t *offerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		page = "1"
 	}
 	t.requests = append(t.requests, page)
+	t.urls = append(t.urls, req.URL.RawQuery)
+	var names []string
+	for _, cookie := range req.Cookies() {
+		names = append(names, cookie.Name)
+	}
+	t.cookies = append(t.cookies, strings.Join(names, ","))
+	status := http.StatusOK
+	if t.statusHits < len(t.statusSeq) {
+		status = t.statusSeq[t.statusHits]
+		t.statusHits++
+	}
+	if status != http.StatusOK {
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(strings.NewReader("unavailable")),
+			Header:     make(http.Header),
+		}, nil
+	}
 	body, ok := t.pages[page]
 	if !ok {
 		return &http.Response{
@@ -148,6 +172,58 @@ func TestParseAODOffer(t *testing.T) {
 	}
 	if offer.Price.Amount != 1001 {
 		t.Fatalf("price = %d, want 1001", offer.Price.Amount)
+	}
+}
+
+func TestAODURLUsesStableQuery(t *testing.T) {
+	got := aodURL("amazon.com", "B0F2BDXW4J", 1)
+	if !strings.Contains(got, "isAod=1") || !strings.Contains(got, "experience=aod") || !strings.Contains(got, "asin=B0F2BDXW4J") {
+		t.Fatalf("aodURL() = %q", got)
+	}
+	page2 := aodURL("amazon.com", "B0F2BDXW4J", 2)
+	if !strings.Contains(page2, "pageno=2") || !strings.Contains(page2, "isonlyrenderofferlist=true") {
+		t.Fatalf("paged aodURL() = %q", page2)
+	}
+}
+
+func TestOffersRetriesUnavailableThenSucceeds(t *testing.T) {
+	transport := &offerRoundTripper{
+		pages:     map[string]string{"1": offerPage(1, 1)},
+		statusSeq: []int{http.StatusServiceUnavailable, http.StatusOK},
+	}
+	store := testOfferStore(transport)
+	result, err := store.Offers(context.Background(), "B0F2BDXW4J", &shop.OffersQuery{PageSize: 1})
+	if err != nil {
+		t.Fatalf("Offers() error = %v", err)
+	}
+	if len(result.Offers) != 1 {
+		t.Fatalf("len(offers) = %d, want 1", len(result.Offers))
+	}
+	if len(transport.urls) != 2 {
+		t.Fatalf("attempts = %d, want 2", len(transport.urls))
+	}
+	if !strings.Contains(transport.urls[0], "isAod=1") || !strings.Contains(transport.urls[0], "experience=aod") {
+		t.Fatalf("query = %q", transport.urls[0])
+	}
+}
+
+func TestOffersSendsSessionCookiesWhenAuthenticated(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "auth"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	auth := []byte(`{"state":"authenticated","device":{},"cookies":[{"name":"at-main","value":"token"},{"name":"ubid-main","value":"ubid"}]}`)
+	if err := os.WriteFile(filepath.Join(dir, "auth", "amazon.com.json"), auth, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	transport := &offerRoundTripper{pages: map[string]string{"1": offerPage(1, 1)}}
+	store := testOfferStore(transport)
+	store.configDir = dir
+	if _, err := store.Offers(context.Background(), "B0F2BDXW4J", &shop.OffersQuery{PageSize: 1}); err != nil {
+		t.Fatalf("Offers() error = %v", err)
+	}
+	if got, want := transport.cookies[0], "at-main,ubid-main"; got != want {
+		t.Fatalf("cookies = %q, want %q", got, want)
 	}
 }
 
