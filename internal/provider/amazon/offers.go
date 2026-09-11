@@ -83,19 +83,6 @@ func (s *Store) Offers(ctx context.Context, productID string, query *shop.Offers
 }
 
 func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) ([]shop.Offer, bool, error) {
-	body, err := s.fetchAODPage(ctx, aodURL(s.handle, productID, page))
-	if err != nil {
-		return nil, false, err
-	}
-	offers, count, err := parseAODOffers(body, s.currency, s.marketplaceID)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return offers, count < aodPageSize, nil
-}
-
-func aodURL(handle, productID string, page int) string {
 	params := url.Values{
 		"asin":       {productID},
 		"isAod":      {"1"},
@@ -105,8 +92,17 @@ func aodURL(handle, productID string, page int) string {
 		params.Set("isonlyrenderofferlist", "true")
 		params.Set("pageno", fmt.Sprintf("%d", page))
 	}
+	rawURL := fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", s.handle, params.Encode())
+	body, err := s.fetchAODPage(ctx, rawURL)
+	if err != nil {
+		return nil, false, err
+	}
+	offers, count, err := parseAODOffers(body, s.currency, s.marketplaceID)
+	if err != nil {
+		return nil, false, err
+	}
 
-	return fmt.Sprintf("https://www.%s/gp/product/ajax/aodAjaxMain?%s", handle, params.Encode())
+	return offers, count < aodPageSize, nil
 }
 
 func (s *Store) fetchAODPage(ctx context.Context, rawURL string) ([]byte, error) {
