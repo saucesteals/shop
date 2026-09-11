@@ -119,12 +119,15 @@ Flags: `--condition` (new|used_like_new|used_good|used_fair|refurbished), `--pag
 ```bash
 shop cart add B0D1XD1ZV3             # add 1 unit
 shop cart add B0D1XD1ZV3 --qty 3     # add 3
+shop cart add B0D1XD1ZV3 --offer '<offer-id>' # add a specific result from `shop offers`
 shop cart view                        # view cart
 shop cart remove B0D1XD1ZV3           # remove item
 shop cart clear                       # empty cart
 ```
 
 All cart commands return full cart snapshot: `.items[]` (product + quantity) and `.subtotal`.
+`--offer` accepts a provider-neutral offer ID returned by `shop offers` for the
+same product. Omit it to use the provider-selected default offer.
 
 ### Checkout (preview only)
 

@@ -4,7 +4,6 @@ package amazon
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
@@ -81,7 +80,7 @@ func (p *Provider) Store(_ context.Context, handle string, configDir string) (sh
 	s := &Store{
 		handle:        handle,
 		configDir:     configDir,
-		client:        &http.Client{Timeout: httpTimeout},
+		client:        newAmazonClient(),
 		currency:      info.Currency,
 		marketplaceID: info.MarketplaceID,
 	}
@@ -94,7 +93,7 @@ func (p *Provider) Store(_ context.Context, handle string, configDir string) (sh
 type Store struct {
 	handle        string
 	configDir     string
-	client        *http.Client
+	client        *amazonClient
 	cart          *cartImpl
 	currency      string
 	marketplaceID string

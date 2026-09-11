@@ -134,4 +134,5 @@ type ShippingInfo struct {
 	Price       *Money `json:"price,omitempty"`
 	Description string `json:"description,omitempty"`
 	Speed       string `json:"speed,omitempty"`
+	From        string `json:"from,omitempty"`
 }

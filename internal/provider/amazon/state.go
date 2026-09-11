@@ -16,14 +16,15 @@ const (
 // checkoutState is the persisted checkout session. Contains everything
 // PlaceOrder needs to sign the purchase without any additional network calls.
 type checkoutState struct {
-	PurchaseID string               `json:"purchaseId"`
-	Items      []checkoutStateItem  `json:"items"`
-	CreatedAt  string               `json:"createdAt"`
+	PurchaseID string              `json:"purchaseId"`
+	Items      []checkoutStateItem `json:"items"`
+	CreatedAt  string              `json:"createdAt"`
 }
 
 // checkoutStateItem is the minimal data needed for the sign request.
 // Fields map directly to the TVSS CheckoutPurchaseSignItem from the APK:
-//   id (cartId), asin, offerId, quantity (always 0).
+//
+//	id (cartId), asin, offerId, quantity (always 0).
 type checkoutStateItem struct {
 	ID      string `json:"id"`
 	ASIN    string `json:"asin"`

@@ -36,10 +36,10 @@ type authState struct {
 	CustomerID        string       `json:"customerId,omitempty"`
 	Cookies           []authCookie `json:"cookies,omitempty"`
 	CookiesExpiry     string       `json:"cookiesExpiry,omitempty"`
-	RefreshToken      string   `json:"refreshToken,omitempty"`
-	BearerToken       string   `json:"bearerToken,omitempty"`
-	BearerTokenExpiry string   `json:"bearerTokenExpiry,omitempty"`
-	AuthenticatedAt   string   `json:"authenticatedAt,omitempty"`
+	RefreshToken      string       `json:"refreshToken,omitempty"`
+	BearerToken       string       `json:"bearerToken,omitempty"`
+	BearerTokenExpiry string       `json:"bearerTokenExpiry,omitempty"`
+	AuthenticatedAt   string       `json:"authenticatedAt,omitempty"`
 }
 
 // authCookie is the JSON-serialized form of a single Amazon session cookie.
@@ -304,15 +304,10 @@ type alexaProfile struct {
 // treat this as best-effort enrichment.
 func (s *Store) fetchAlexaProfile(ctx context.Context, api *tvssClient) (*alexaProfile, error) {
 	alexaURL := fmt.Sprintf("https://alexa.%s/api/users/me", s.handle)
-	req, err := api.newRequest(ctx, http.MethodGet, alexaURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("User-Agent", mobileUA)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := api.http.Do(req)
+	resp, err := api.http.do(ctx, http.MethodGet, alexaURL, nil, requestOptions{
+		profile: profileJSON,
+		cookies: api.cookies,
+	})
 	if err != nil {
 		return nil, err
 	}

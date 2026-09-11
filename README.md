@@ -285,12 +285,19 @@ Returns seller offers for a product, including condition and pricing.
 ```bash
 shop cart add B0D1XD1ZV3              # Add 1 unit
 shop cart add B0D1XD1ZV3 --qty 3     # Add 3 units
+shop cart add B0D1XD1ZV3 --offer '<offer-id>' # Add a specific offer returned by `shop offers`
 shop cart view                        # View cart with subtotal
 shop cart remove B0D1XD1ZV3           # Remove item
 shop cart clear                       # Empty the cart
 ```
 
 All cart commands return the full cart snapshot with items and subtotal.
+
+`--offer` is provider-neutral: pass an offer ID returned by `shop offers` for
+the same product. Omit it to let the store choose its default offer.
+
+Go callers can pass `&shop.CartAddOptions{OfferID: offerID}` to select an
+offer, or `nil` to use the provider-selected default.
 
 ### Checkout & Order
 
