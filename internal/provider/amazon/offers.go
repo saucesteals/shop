@@ -104,7 +104,7 @@ func (s *Store) fetchAODOffers(ctx context.Context, productID string, page int) 
 	}
 	offers, count, err := parseAODOffers(body, s.currency, s.marketplaceID)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("offers page %d: %w", page, err)
 	}
 
 	return offers, count < aodPageSize, nil
@@ -157,6 +157,11 @@ func parseAODOffers(body []byte, currency, marketplaceID string) ([]shop.Offer, 
 
 	offers := make([]shop.Offer, 0, len(pinned)+len(other))
 	for _, node := range pinned {
+		// Amazon also renders this container as a product header with no buy box.
+		// It is not an offer when both seller and purchase identity are absent.
+		if firstNode(node, "id", "aod-offer-soldBy") == nil && offerIDFromNode(node) == "" {
+			continue
+		}
 		offer, err := parseAODOffer(node, currency, marketplaceID)
 		if err != nil {
 			return nil, 0, err
@@ -181,7 +186,8 @@ func aodListOffers(doc *html.Node) []*html.Node {
 	}
 	list := reviewFind(doc, "id", "aod-offer-list")
 	if len(list) == 0 {
-		return nil
+		// Subsequent AOD pages may be bare offer fragments without the list wrapper.
+		return reviewFind(doc, "class", "aod-information-block")
 	}
 
 	return reviewFind(list[0], "class", "aod-information-block")
@@ -197,7 +203,14 @@ func (s *Store) sessionCookies() []*http.Cookie {
 }
 
 func parseAODOffer(node *html.Node, currency, marketplaceID string) (shop.Offer, error) {
-	priceText := reviewText(node)
+	priceNode := firstNode(node, "id", "aod-offer-price")
+	if priceNode == nil {
+		priceNode = firstNode(node, "class", "a-price")
+	}
+	if priceNode == nil {
+		return shop.Offer{}, shop.Errorf(shop.ErrStoreError, "Amazon offer is missing its price element")
+	}
+	priceText := reviewText(priceNode)
 	price := parsePriceCents(priceText, currency)
 	if price == 0 {
 		return shop.Offer{}, shop.Errorf(shop.ErrStoreError, "Amazon offer is missing a valid price")
@@ -209,7 +222,7 @@ func parseAODOffer(node *html.Node, currency, marketplaceID string) (shop.Offer,
 	}
 	sellerName := sellerNameFromNode(sellerNode)
 	sellerID := sellerIDFromNode(sellerNode)
-	if isAmazonSeller(sellerName) {
+	if isAmazonSeller(sellerName, marketplaceID) {
 		sellerName = "Amazon"
 		if sellerID == "" {
 			sellerID = marketplaceID
@@ -340,10 +353,11 @@ func decodeAODOfferID(raw string) string {
 	return offerID
 }
 
-func isAmazonSeller(name string) bool {
+func isAmazonSeller(name, marketplaceID string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
+	market, known := supportedDomains[name]
 
-	return name == "amazon" || strings.HasPrefix(name, "amazon.")
+	return name == "amazon" || (known && market.MarketplaceID == marketplaceID)
 }
 
 func parseAODCondition(value string) shop.OfferCondition {
@@ -357,8 +371,10 @@ func parseAODCondition(value string) shop.OfferCondition {
 		return shop.ConditionUsedFair
 	case strings.Contains(value, "renewed"), strings.Contains(value, "refurbished"):
 		return shop.ConditionRefurbished
-	default:
+	case value == "new":
 		return shop.ConditionNew
+	default:
+		return shop.ConditionAny
 	}
 }
 
