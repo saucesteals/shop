@@ -429,10 +429,11 @@ func mapCartItemsToEntries(items []tvssCartItem, domain, currency string) []shop
 		entry := shop.CartEntry{
 			Quantity: item.Quantity,
 			Product: shop.Product{
-				ID:    item.ASIN,
-				Title: item.Title,
-				Brand: item.ByLine,
-				URL:   productURL(domain, item.ASIN),
+				ID:         item.ASIN,
+				Attributes: map[string]any{"offerId": item.OfferID, "itemId": item.ItemID},
+				Title:      item.Title,
+				Brand:      item.ByLine,
+				URL:        productURL(domain, item.ASIN),
 				Availability: shop.Availability{
 					Status: shop.AvailabilityInStock,
 				},
