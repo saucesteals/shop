@@ -14,7 +14,7 @@ A multi-store shopping CLI with a unified interface. Search products, read revie
 
 ---
 
-**Search** · **Product Details** · **Reviews** · **Variants** · **Offers** · **Cart** · **Checkout** · **Order**
+**Search** · **Product Details** · **Reviews** · **Variants** · **Offers** · **Cart** · **Checkout** · **Order** · **Tracking**
 
 </div>
 
@@ -22,7 +22,7 @@ A multi-store shopping CLI with a unified interface. Search products, read revie
 
 ## What is this?
 
-`shop` is a single-binary CLI that gives you programmatic access to online stores through their internal APIs — the same APIs their own apps use. No scraping, no browser automation, no third-party API keys. Just direct HTTP calls, authenticated natively.
+`shop` is a single-binary CLI that gives you programmatic access to online stores through their internal APIs — the same APIs their own apps use. Store integrations use direct HTTP requests with native authentication. Shipment tracking works independently, without a store login or API key.
 
 ```bash
 # Search from your terminal
@@ -136,7 +136,7 @@ That's the full flow. Search to doorstep, never leaving the terminal.
 
 ### Provider Architecture
 
-Each store is implemented as a **provider** that reverse-engineers the store's public APIs. This means structured JSON responses, stable endpoints, and full feature access without scraping.
+Each store is implemented as a **provider** that reverse-engineers the store's public APIs. Providers normalize their upstream responses into a common JSON interface.
 
 ### Amazon Provider
 
@@ -160,7 +160,7 @@ The Amazon provider speaks **TVSS** (TV Shopping Service) — the internal API b
 ### The approach
 
 - **No API keys** — stores don't offer public product APIs. We don't need them.
-- **No scraping** — No HTML parsing, no CSS selectors, no breaking on redesigns.
+- **Structured output** — API and HTML responses are normalized into JSON for scripts and agents.
 - **No browser** — No Puppeteer, no Playwright, no headless Chrome. Just HTTP.
 - **Native auth** — authenticated as a real device on your account, per-provider.
 
@@ -321,6 +321,48 @@ The `checkout-id` comes from the checkout preview response. If the cart changes 
 
 </details>
 
+### Shipment Tracking
+
+Look up a package without choosing a store or signing in:
+
+```bash
+shop track <tracking-number>
+shop track <tracking-number> --pretty
+shop track <tracking-number> | jq '.events[0]'
+```
+
+Returns the tracking number, source, tracking URL, retrieval time, and scan history. Each event includes its date, time, description, and location when available.
+
+Save packages in a local ledger so you know what each number belongs to:
+
+```bash
+shop track add <tracking-number> --label "Desk equipment" \
+  --merchant "Example Store" --order-id "ORDER001" --note "Office delivery"
+shop track list
+shop track refresh                    # Refresh all saved shipments
+shop track refresh <tracking-number>  # Refresh one saved shipment
+shop track remove <tracking-number>
+```
+
+- `add` saves the number and optional attribution; it does not fetch tracking status. Duplicate numbers are rejected without overwriting the existing entry.
+- `list` returns saved entries offline. Use a saved `trackingNumber` with `shop track` to fetch its history.
+- `remove` deletes only the local entry; removing an absent number is harmless.
+- Lookups do not automatically save packages. Labels, merchant names, order IDs, and notes stay local.
+
+Tracking is experimental and currently uses Track.global. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
+
+`--timeout`, `--json`, `--pretty`, and `--config` apply. `--store` does not.
+
+#### Refresh summaries
+
+Each shipment is stored as one JSON record in `state/shipments/<tracking-number>.json`, with attribution and a `tracking` snapshot holding the last successful lookup and its scan events. `track list` reads these records offline.
+
+`shop track refresh` looks up saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
+
+Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
+
+The timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
+
 ### Account
 
 ```bash
@@ -401,6 +443,7 @@ Structured JSON on stderr with typed error codes:
 - `quantity_limit` (exit 42) — Exceeds store limit
 - `rate_limited` (exit 50) — Too many requests
 - `store_error` (exit 51) — Store-side error
+- `upstream_error` (exit 51) — Tracking source did not provide usable history; does not imply the package is invalid
 - `network` (exit 60) — Network failure
 - `invalid_input` (exit 2) — Bad arguments
 - `config_error` (exit 3) — Config read/write failure
@@ -416,8 +459,11 @@ Structured JSON on stderr with typed error codes:
 ~/.config/shop/
 ├── config.json          # User settings
 ├── registry.json        # Store → provider mapping
-└── auth/
-    └── amazon.json      # Auth state (0600 permissions)
+├── auth/
+│   └── amazon.json      # Auth state (0600 permissions)
+└── state/
+    ├── <store>/        # Store-scoped checkout and order state
+    └── shipments/      # Attribution and tracking snapshots (0600 permissions)
 ```
 
 ```bash

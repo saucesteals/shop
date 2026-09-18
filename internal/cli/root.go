@@ -98,6 +98,7 @@ func New() *cobra.Command {
 		c.newCartCmd(),
 		c.newCheckoutCmd(),
 		c.newOrderCmd(),
+		c.newTrackCmd(),
 		c.newLoginCmd(),
 		c.newLogoutCmd(),
 		c.newWhoAmICmd(),
