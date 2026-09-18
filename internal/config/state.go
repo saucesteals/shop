@@ -123,7 +123,7 @@ func stateDirPath(configDir, scope, namespace string) string {
 
 // stateFilePath returns the full path for a state entry.
 func stateFilePath(configDir, scope, namespace, key string) string {
-	return filepath.Join(configDir, stateDir, sanitizeKey(scope), sanitizeKey(namespace), sanitizeKey(key)+".json")
+	return filepath.Join(stateDirPath(configDir, scope, namespace), sanitizeKey(key)+".json")
 }
 
 // sanitizeKey prevents path traversal in state keys.
