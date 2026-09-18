@@ -2,9 +2,9 @@
 name: shop
 description: >
   Multi-store shopping CLI. Search products, check prices, compare items, read reviews, manage
-  carts, and place orders via the `shop` CLI. Use when asked to buy something, find a product,
+  carts, place orders, and track packages via the `shop` CLI. Use when asked to buy something, find a product,
   look up prices, add to cart, checkout, order, search for products, compare products, check
-  availability, look at reviews, find deals, or any shopping/e-commerce task. Currently supports
+  availability, look at reviews, find deals, check a shipment, or save package tracking numbers. Currently supports
   Amazon (US/UK/DE/JP/CA/AU). Provider architecture supports adding new stores.
 ---
 
@@ -33,7 +33,7 @@ shop whoami -s amazon                    # check auth state
 shop logout amazon                       # revoke + clear tokens
 ```
 
-Auth persists in `~/.config/shop/auth/`. Most commands require auth.
+Auth persists in `~/.config/shop/auth/`. Store operations may require auth. Shipment tracking and its local ledger do not.
 On `auth_required` (exit 10) or `auth_expired` (exit 11), re-run login flow.
 
 ## Global Flags
@@ -43,6 +43,7 @@ On `auth_required` (exit 10) or `auth_expired` (exit 11), re-run login flow.
 --json               # force compact JSON
 --pretty             # force pretty JSON
 --timeout <dur>      # request timeout (default 30s)
+--config <path>      # config and local state directory
 ```
 
 Set a default store: `shop config set defaults.store amazon`
@@ -148,6 +149,32 @@ shop order place <checkout-id>
 
 Fails with `cart_changed` (exit 41) if cart was modified after checkout preview.
 
+### Shipment Tracking
+
+Use for package status and scan history. No login or `--store` is needed.
+
+```bash
+shop track <tracking-number>
+shop track <tracking-number> | jq '{trackingNumber, source, latest: .events[0], url}'
+```
+
+Response: `trackingNumber`, `source`, `url`, `fetchedAt`, `freshness`, and `events[]` with `date`, optional `time`, `description`, and optional `location`.
+
+To remember what a package belongs to, save its attribution separately:
+
+```bash
+shop track add <tracking-number> --label "Desk equipment" \
+  --merchant "Example Store" --order-id "ORDER001" --note "Office delivery"
+shop track list
+shop track remove <tracking-number>
+```
+
+`add` returns the saved entry with `addedAt`; all attribution flags are optional. `list` returns an array of entries without network access. `remove` returns `{"removed":true}` and is idempotent. Duplicate additions return `invalid_input` and preserve the existing entry. A lookup never saves an entry automatically; local attribution is not sent upstream.
+
+For a named saved package, run `track list`, match its label/merchant/order ID, then look up its `trackingNumber`. Ask which package if multiple entries match; do not guess. Do not invent attribution or overwrite an existing record by removing/re-adding it unless requested.
+
+Report the latest scan's description, date/time, location, and tracking link. Only report an ETA if the source explicitly supplies it; distinguish an estimate from a guarantee. `fetchedAt` is lookup time, not carrier freshness. `freshness: "unknown"` means freshness is unverified. Do not assume a timezone for event times or promise automatic monitoring.
+
 ### Account
 
 ```bash
@@ -211,7 +238,9 @@ Errors JSON on stderr: `{"code": "...", "message": "..."}`. Key exit codes:
 - 10 `auth_required` / 11 `auth_expired` — re-login
 - 30 `not_found` — bad ASIN / 31 `out_of_stock` — unavailable
 - 40 `cart_empty` / 41 `cart_changed` — re-run checkout before placing
-- 50 `rate_limited` — back off and retry
+- 50 `rate_limited` — back off and retry; honor `details.retryAfter` when supplied
+- 51 `upstream_error` — tracking history unavailable or unexpected source response; report the failure, not “invalid tracking number”
+- 2 `invalid_input` — check arguments; duplicate saved shipments leave existing metadata unchanged
 
 ## Presenting Results to Users
 
@@ -286,13 +315,3 @@ Show 2–3 reviews max by default, top helpful first.
 - Cart state is per-store, persisted locally. `cart clear` before starting a new purchase flow.
 - Amazon only returns the buy-box offer from `offers` (single seller). Other providers may differ.
 - `checkout` returns a `checkoutId` tied to cart state — if anything changes, re-checkout.
-
-## Shipment tracking (experimental)
-
-`shop track <tracking-number>` returns available shipment history as JSON, without a store login. Supports the existing `--timeout`, `--json`, and `--pretty` flags; `--store` does not apply.
-
-The initial source is Track.global, an unofficial third-party service. This command reads available cached history; cold lookups may be unavailable and carrier refresh timing is not guaranteed. `fetchedAt` is retrieval time, not scan freshness; `freshness` remains `unknown`. Events preserve source-local dates/times without an assumed timezone. An unavailable history returns structured `upstream_error` (exit 51), not a false claim that the shipment does not exist. Rate limits use `rate_limited` (exit 50).
-
-Save attribution locally with `shop track add <tracking-number> --label "Desk equipment" --merchant "Example" --order-id "ORDER001" --note "Office"`. `shop track list` reads the ledger offline; `shop track remove <tracking-number>` removes only the local entry (idempotent). Duplicate additions fail without changing existing metadata. Records use private permissions through the shared state layer at `state/_global/shipments/` in the config directory and are published atomically. Lookups do not automatically save entries; metadata is never sent to the tracking source.
-
-Lookups initialize an anonymous session and follow the source's cache/refresh flow. No API credentials or browser runtime are required. Freshness remains source-dependent.
