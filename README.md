@@ -339,6 +339,8 @@ Save packages in a local ledger so you know what each number belongs to:
 shop track add <tracking-number> --label "Desk equipment" \
   --merchant "Example Store" --order-id "ORDER001" --note "Office delivery"
 shop track list
+shop track refresh                    # Refresh all saved shipments
+shop track refresh <tracking-number>  # Refresh one saved shipment
 shop track remove <tracking-number>
 ```
 
@@ -350,6 +352,14 @@ shop track remove <tracking-number>
 Tracking is experimental and currently uses Track.global. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
 
 `--timeout`, `--json`, `--pretty`, and `--config` apply. `--store` does not.
+
+#### Refresh summaries
+
+`shop track refresh` looks up saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
+
+Successful histories are saved separately from attribution in shared local state. Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
+
+The timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
 
 ### Account
 

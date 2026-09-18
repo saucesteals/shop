@@ -35,7 +35,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 			return c.outputJSON(result)
 		},
 	}
-	track.AddCommand(c.newTrackAddCmd(), c.newTrackListCmd(), c.newTrackRemoveCmd())
+	track.AddCommand(c.newTrackAddCmd(), c.newTrackListCmd(), c.newTrackRemoveCmd(), c.newTrackRefreshCmd())
 	return track
 }
 
@@ -84,6 +84,34 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 			return c.outputJSON(struct {
 				Removed bool `json:"removed"`
 			}{Removed: true})
+		},
+	}
+}
+
+func (c *CLI) newTrackRefreshCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "refresh [tracking-number]",
+		Short: "Refresh saved shipments and summarize their latest scans",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var number string
+			if len(args) > 0 {
+				number = args[0]
+			}
+			ctx, cancel := c.timeoutCtx(cmd)
+			defer cancel()
+			result, err := c.shipmentLedger().Refresh(ctx, &trackglobal.Client{}, number)
+			if err != nil {
+				return err
+			}
+			if err := c.outputJSON(result); err != nil {
+				return err
+			}
+			if result.Failed > 0 {
+				return shop.Errorf(shop.ErrUpstream, "%d shipment refreshes failed", result.Failed)
+			}
+
+			return nil
 		},
 	}
 }
