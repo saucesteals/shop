@@ -23,6 +23,12 @@ type Client struct {
 	HTTP *http.Client
 }
 
+// Carriers declares the supported explicitly routed delivery networks.
+// Other identifiers may still be queried when this client is used as fallback.
+func (c *Client) Carriers() []tracking.Carrier {
+	return []tracking.Carrier{tracking.USPS}
+}
+
 // Track follows the consumer lookup flow; carrier freshness remains source-dependent.
 func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingSnapshot, error) {
 	number, err := tracking.Number(number)

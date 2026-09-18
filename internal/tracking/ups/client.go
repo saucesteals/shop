@@ -25,18 +25,9 @@ type Client struct {
 	HTTP *http.Client
 }
 
-// Matches recognizes the carrier's standard 1Z tracking identifiers.
-func Matches(number string) bool {
-	if len(number) != 18 || !strings.EqualFold(number[:2], "1Z") {
-		return false
-	}
-	for _, ch := range strings.ToUpper(number[2:]) {
-		if (ch < '0' || ch > '9') && (ch < 'A' || ch > 'Z') {
-			return false
-		}
-	}
-
-	return true
+// Carriers declares the delivery networks handled by this provider.
+func (c *Client) Carriers() []tracking.Carrier {
+	return []tracking.Carrier{tracking.UPS}
 }
 
 // Track retrieves scans without retaining cookies or account information.
@@ -45,7 +36,7 @@ func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingSnapsh
 	if err != nil {
 		return nil, err
 	}
-	if !Matches(number) {
+	if tracking.DetectCarrier(number) != tracking.UPS {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "unsupported carrier tracking number")
 	}
 	client := http.Client{Timeout: 30 * time.Second}

@@ -531,6 +531,14 @@ import _ "github.com/saucesteals/shop/internal/provider/amazon"
 
 That's it. No config files, no factory registration, no dependency injection. The provider exists and the CLI finds it.
 
+### Shipment Tracking Providers
+
+Tracking providers are separate from shopping stores. Each implements `tracking.Provider`: `Track` retrieves a snapshot and `Carriers` declares the typed carrier IDs it handles. `tracking.NewRegistry` builds the routing map and rejects duplicate handlers or undeclared carrier IDs.
+
+`internal/tracking/carriers.New` wires the built-in providers and an explicit general-purpose fallback. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler use the fallback; a selected provider's error is returned without silently switching sources.
+
+To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and, where its number format is unambiguous, a detection rule.
+
 ---
 
 ## Supported Stores

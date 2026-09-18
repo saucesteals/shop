@@ -26,7 +26,10 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client := &carriers.Client{}
+			client, err := carriers.New()
+			if err != nil {
+				return err
+			}
 			result, err := client.Track(ctx, args[0])
 			if err != nil {
 				return err
@@ -100,7 +103,11 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			}
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			result, err := c.shipmentLedger().Refresh(ctx, &carriers.Client{}, number)
+			client, err := carriers.New()
+			if err != nil {
+				return err
+			}
+			result, err := c.shipmentLedger().Refresh(ctx, client, number)
 			if err != nil {
 				return err
 			}
