@@ -28,7 +28,7 @@ func (l Ledger) Add(entry shop.Shipment) (*shop.Shipment, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := config.CreateState(l.ConfigDir, config.GlobalStateScope, "shipments", number, data); err != nil {
+	if err := config.CreateState(l.ConfigDir, "", "shipments", number, data); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, shop.Errorf(shop.ErrInvalidInput, "shipment already saved")
 		}
@@ -40,13 +40,13 @@ func (l Ledger) Add(entry shop.Shipment) (*shop.Shipment, error) {
 
 // List returns saved shipments in tracking-number order without network requests.
 func (l Ledger) List() ([]shop.Shipment, error) {
-	keys, err := config.ListStates(l.ConfigDir, config.GlobalStateScope, "shipments")
+	keys, err := config.ListStates(l.ConfigDir, "", "shipments")
 	if err != nil {
 		return nil, ledgerError(err)
 	}
 	result := make([]shop.Shipment, 0, len(keys))
 	for _, key := range keys {
-		data, err := config.LoadState(l.ConfigDir, config.GlobalStateScope, "shipments", key)
+		data, err := config.LoadState(l.ConfigDir, "", "shipments", key)
 		if err != nil {
 			return nil, ledgerError(err)
 		}
@@ -69,7 +69,7 @@ func (l Ledger) Remove(value string) error {
 	if err != nil {
 		return err
 	}
-	if err := config.DeleteState(l.ConfigDir, config.GlobalStateScope, "shipments", number); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := config.DeleteState(l.ConfigDir, "", "shipments", number); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return ledgerError(err)
 	}
 

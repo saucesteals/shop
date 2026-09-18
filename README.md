@@ -451,8 +451,7 @@ Structured JSON on stderr with typed error codes:
 │   └── amazon.json      # Auth state (0600 permissions)
 └── state/
     ├── <store>/        # Store-scoped checkout and order state
-    └── _global/
-        └── shipments/  # Saved shipment attribution (0600 permissions)
+    └── shipments/      # Saved shipment attribution (0600 permissions)
 ```
 
 ```bash

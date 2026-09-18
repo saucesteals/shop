@@ -10,11 +10,8 @@ import (
 
 const stateDir = "state"
 
-// GlobalStateScope identifies application-wide state rather than a store.
-const GlobalStateScope = "_global"
-
 // SaveState atomically replaces a named JSON blob in a scope and namespace.
-// Existing callers retain their store-scoped paths. Files are private (0600).
+// An empty scope stores state directly under its namespace. Files are private (0600).
 func SaveState(configDir, scope, namespace, key string, data json.RawMessage) error {
 	return writeState(configDir, scope, namespace, key, data, false)
 }
@@ -63,23 +60,23 @@ func writeState(configDir, scope, namespace, key string, data json.RawMessage, e
 }
 
 // LoadState reads a named state blob. Returns nil if it doesn't exist.
-func LoadState(configDir, handle, namespace, key string) (json.RawMessage, error) {
-	path := stateFilePath(configDir, handle, namespace, key)
+func LoadState(configDir, scope, namespace, key string) (json.RawMessage, error) {
+	path := stateFilePath(configDir, scope, namespace, key)
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read state %s/%s/%s: %w", handle, namespace, key, err)
+		return nil, fmt.Errorf("read state %s/%s/%s: %w", scope, namespace, key, err)
 	}
 
 	return json.RawMessage(data), nil
 }
 
 // DeleteState removes a single state entry. No error if it doesn't exist.
-func DeleteState(configDir, handle, namespace, key string) error {
-	path := stateFilePath(configDir, handle, namespace, key)
+func DeleteState(configDir, scope, namespace, key string) error {
+	path := stateFilePath(configDir, scope, namespace, key)
 
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
@@ -89,15 +86,15 @@ func DeleteState(configDir, handle, namespace, key string) error {
 }
 
 // ListStates returns the keys in a namespace (without .json extension).
-func ListStates(configDir, handle, namespace string) ([]string, error) {
-	dir := stateDirPath(configDir, handle, namespace)
+func ListStates(configDir, scope, namespace string) ([]string, error) {
+	dir := stateDirPath(configDir, scope, namespace)
 
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list state %s/%s: %w", handle, namespace, err)
+		return nil, fmt.Errorf("list state %s/%s: %w", scope, namespace, err)
 	}
 
 	var keys []string
@@ -114,14 +111,19 @@ func ListStates(configDir, handle, namespace string) ([]string, error) {
 	return keys, nil
 }
 
-// stateDirPath returns the directory for a namespace under a store handle.
-func stateDirPath(configDir, handle, namespace string) string {
-	return filepath.Join(configDir, stateDir, sanitizeKey(handle), sanitizeKey(namespace))
+// stateDirPath returns a namespace directory, optionally nested under a scope.
+func stateDirPath(configDir, scope, namespace string) string {
+	dir := filepath.Join(configDir, stateDir)
+	if scope != "" {
+		dir = filepath.Join(dir, sanitizeKey(scope))
+	}
+
+	return filepath.Join(dir, sanitizeKey(namespace))
 }
 
 // stateFilePath returns the full path for a state entry.
-func stateFilePath(configDir, handle, namespace, key string) string {
-	return filepath.Join(configDir, stateDir, sanitizeKey(handle), sanitizeKey(namespace), sanitizeKey(key)+".json")
+func stateFilePath(configDir, scope, namespace, key string) string {
+	return filepath.Join(configDir, stateDir, sanitizeKey(scope), sanitizeKey(namespace), sanitizeKey(key)+".json")
 }
 
 // sanitizeKey prevents path traversal in state keys.
