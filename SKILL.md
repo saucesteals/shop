@@ -179,7 +179,7 @@ Report the latest scan's description, date/time, location, and tracking link. On
 
 #### Refresh summaries
 
-Each shipment is stored as one JSON record in `state/shipments/<tracking-number>.json`, with attribution and a `tracking` snapshot holding the last successful lookup and its scan events. `track list` reads these records offline. Older `history` fields and split history records are migrated automatically.
+Each shipment is stored as one JSON record in `state/shipments/<tracking-number>.json`, with attribution and a `tracking` snapshot holding the last successful lookup and its scan events. `track list` reads these records offline.
 
 `shop track refresh` looks up saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
 
