@@ -17,7 +17,11 @@ func parse(r io.Reader) ([]shop.TrackingEvent, error) {
 	var events []shop.TrackingEvent
 	widget := false
 	incomplete := false
+	empty := false
 	walk(doc, func(n *html.Node) {
+		if hasClass(n, "tracking-widget-empty") {
+			empty = true
+		}
 		if hasClass(n, "tracking-widget") {
 			widget = true
 		}
@@ -46,6 +50,9 @@ func parse(r io.Reader) ([]shop.TrackingEvent, error) {
 		}
 		events = append(events, event)
 	})
+	if widget && empty {
+		return nil, upstreamError("history_unavailable")
+	}
 	if !widget || incomplete {
 		return nil, upstreamError("unexpected_markup")
 	}
