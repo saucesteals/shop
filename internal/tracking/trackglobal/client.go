@@ -24,7 +24,7 @@ type Client struct {
 }
 
 // Track follows the consumer lookup flow; carrier freshness remains source-dependent.
-func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingResult, error) {
+func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingSnapshot, error) {
 	number, err := tracking.Number(number)
 	if err != nil {
 		return nil, err
@@ -60,10 +60,10 @@ func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingResult
 		return nil, err
 	}
 
-	return &shop.TrackingResult{
+	return &shop.TrackingSnapshot{
 		TrackingNumber: number, Source: "trackglobal",
 		URL:       origin + "/en?" + url.Values{"trackingNumber": {number}}.Encode(),
-		FetchedAt: time.Now().UTC().Format(time.RFC3339), Freshness: "unknown", Events: events,
+		FetchedAt: time.Now().UTC(), Freshness: "unknown", Events: events,
 	}, nil
 }
 

@@ -23,7 +23,7 @@ func (l Ledger) Add(entry shop.Shipment) (*shop.Shipment, error) {
 		return nil, err
 	}
 	entry.TrackingNumber = number
-	entry.AddedAt = time.Now().UTC().Format(time.RFC3339)
+	entry.AddedAt = time.Now().UTC()
 	data, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
 		return nil, err
@@ -53,9 +53,19 @@ func (l Ledger) List() ([]shop.Shipment, error) {
 		if data == nil {
 			continue
 		}
-		var shipment shop.Shipment
-		if err := json.Unmarshal(data, &shipment); err != nil {
+		var record struct {
+			shop.Shipment
+			History *shop.TrackingSnapshot `json:"history,omitempty"`
+		}
+		if err := json.Unmarshal(data, &record); err != nil {
 			return nil, ledgerError(err)
+		}
+		shipment := record.Shipment
+		if shipment.Tracking == nil && record.History != nil {
+			shipment.Tracking = record.History
+			if err := l.save(shipment); err != nil {
+				return nil, ledgerError(err)
+			}
 		}
 		if err := l.migrateHistory(&shipment); err != nil {
 			return nil, ledgerError(err)
@@ -97,21 +107,21 @@ func (l Ledger) save(shipment shop.Shipment) error {
 }
 
 // migrateHistory folds legacy split snapshots into their shipment before cleanup.
-// An existing embedded history wins, making interrupted cleanup safe to retry.
+// An existing tracking snapshot wins, making interrupted cleanup safe to retry.
 func (l Ledger) migrateHistory(shipment *shop.Shipment) error {
 	data, err := config.LoadState(l.ConfigDir, "", "shipment-history", shipment.TrackingNumber)
 	if err != nil || data == nil {
 		return err
 	}
-	if shipment.History == nil {
-		var history shop.TrackingResult
+	if shipment.Tracking == nil {
+		var history shop.TrackingSnapshot
 		if err := json.Unmarshal(data, &history); err != nil {
 			return err
 		}
 		if history.TrackingNumber != shipment.TrackingNumber || len(history.Events) == 0 {
 			return errors.New("invalid saved shipment history")
 		}
-		shipment.History = &history
+		shipment.Tracking = &history
 		if err := l.save(*shipment); err != nil {
 			return err
 		}

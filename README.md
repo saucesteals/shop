@@ -355,11 +355,11 @@ Tracking is experimental and currently uses Track.global. Results may be cached:
 
 #### Refresh summaries
 
-Each shipment is stored as one JSON record in `state/shipments/<tracking-number>.json`, with attribution and a `history` field holding the last successful lookup and its scan events. `track list` reads these records offline. Older split history records are merged automatically.
+Each shipment is stored as one JSON record in `state/shipments/<tracking-number>.json`, with attribution and a `tracking` snapshot holding the last successful lookup and its scan events. `track list` reads these records offline. Older `history` fields and split history records are migrated automatically.
 
 `shop track refresh` looks up saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
 
-Successful histories are saved separately from attribution in shared local state. Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
+Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
 
 The timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
 
@@ -463,7 +463,7 @@ Structured JSON on stderr with typed error codes:
 │   └── amazon.json      # Auth state (0600 permissions)
 └── state/
     ├── <store>/        # Store-scoped checkout and order state
-    └── shipments/      # Saved shipment attribution (0600 permissions)
+    └── shipments/      # Attribution and tracking snapshots (0600 permissions)
 ```
 
 ```bash

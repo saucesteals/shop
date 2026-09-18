@@ -3,13 +3,14 @@ package tracking
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/saucesteals/shop"
 )
 
 // Tracker retrieves a shipment's available history.
 type Tracker interface {
-	Track(context.Context, string) (*shop.TrackingResult, error)
+	Track(context.Context, string) (*shop.TrackingSnapshot, error)
 }
 
 // RefreshResult summarizes a batch without discarding individual failures.
@@ -24,7 +25,7 @@ type RefreshResult struct {
 type Summary struct {
 	shop.Shipment
 	Latest    *shop.TrackingEvent `json:"latest,omitempty"`
-	FetchedAt string              `json:"fetchedAt,omitempty"`
+	FetchedAt time.Time           `json:"fetchedAt,omitzero"`
 	URL       string              `json:"url,omitempty"`
 	Freshness string              `json:"freshness"`
 	Refreshed bool                `json:"refreshed"`
@@ -52,16 +53,16 @@ func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string) (*R
 		}
 		summary := Summary{Shipment: entry, Freshness: "unknown"}
 		// Keep the full history in storage/list output, not the compact summary.
-		summary.History = nil
-		if entry.History != nil {
-			summary.apply(entry.History)
+		summary.Tracking = nil
+		if entry.Tracking != nil {
+			summary.apply(entry.Tracking)
 		}
 		snapshot, lookupErr := tracker.Track(ctx, entry.TrackingNumber)
 		if lookupErr == nil && (snapshot == nil || len(snapshot.Events) == 0 || snapshot.TrackingNumber != entry.TrackingNumber) {
 			lookupErr = shop.Errorf(shop.ErrUpstream, "tracking source returned an invalid snapshot")
 		}
 		if lookupErr == nil {
-			entry.History = snapshot
+			entry.Tracking = snapshot
 			lookupErr = l.save(entry)
 			if lookupErr == nil {
 				summary.apply(snapshot)
@@ -89,7 +90,7 @@ func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string) (*R
 	return result, nil
 }
 
-func (s *Summary) apply(snapshot *shop.TrackingResult) {
+func (s *Summary) apply(snapshot *shop.TrackingSnapshot) {
 	if len(snapshot.Events) > 0 {
 		event := snapshot.Events[0]
 		s.Latest = &event
