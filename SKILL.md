@@ -292,3 +292,7 @@ Show 2–3 reviews max by default, top helpful first.
 `shop track <tracking-number>` returns available shipment history as JSON, without a store login. Supports the existing `--timeout`, `--json`, and `--pretty` flags; `--store` does not apply.
 
 The initial source is Track.global, an unofficial third-party service. This command reads available cached history; cold lookups may be unavailable and carrier refresh timing is not guaranteed. `fetchedAt` is retrieval time, not scan freshness; `freshness` remains `unknown`. Events preserve source-local dates/times without an assumed timezone. An unavailable history returns structured `upstream_error` (exit 51), not a false claim that the shipment does not exist. Rate limits use `rate_limited` (exit 50).
+
+Save attribution locally with `shop track add <tracking-number> --label "Desk equipment" --merchant "Example" --order-id "ORDER001" --note "Office"`. `shop track list` reads the ledger offline; `shop track remove <tracking-number>` removes only the local entry (idempotent). Duplicate additions fail without changing existing metadata. Records use private permissions under the configured `shipments/` directory and are published atomically. Lookups do not automatically save entries; metadata is never sent to the tracking source.
+
+Lookups initialize an anonymous session and follow the source's cache/refresh flow. No API credentials or browser runtime are required. Freshness remains source-dependent.

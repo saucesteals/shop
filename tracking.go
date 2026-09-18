@@ -17,3 +17,13 @@ type TrackingEvent struct {
 	Description string `json:"description"`
 	Location    string `json:"location,omitempty"`
 }
+
+// Shipment records local attribution for a tracking number.
+type Shipment struct {
+	TrackingNumber string `json:"trackingNumber"`
+	Label          string `json:"label,omitempty"`
+	Merchant       string `json:"merchant,omitempty"`
+	OrderID        string `json:"orderId,omitempty"`
+	Note           string `json:"note,omitempty"`
+	AddedAt        string `json:"addedAt"`
+}
