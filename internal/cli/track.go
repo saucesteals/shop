@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"path/filepath"
-
 	"github.com/spf13/cobra"
 
 	"github.com/saucesteals/shop"
@@ -42,7 +40,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 }
 
 func (c *CLI) shipmentLedger() tracking.Ledger {
-	return tracking.Ledger{Dir: filepath.Join(c.app.ConfigDir, "shipments")}
+	return tracking.Ledger{ConfigDir: c.app.ConfigDir}
 }
 
 func (c *CLI) newTrackAddCmd() *cobra.Command {

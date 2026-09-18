@@ -10,17 +10,56 @@ import (
 
 const stateDir = "state"
 
-// SaveState writes a named JSON blob for a store. Namespace groups related
-// data (e.g., "checkouts", "orders"). Key is the unique identifier within
-// that namespace. Files are written with 0600 permissions.
-func SaveState(configDir, handle, namespace, key string, data json.RawMessage) error {
-	dir := stateDirPath(configDir, handle, namespace)
+// GlobalStateScope identifies application-wide state rather than a store.
+const GlobalStateScope = "_global"
+
+// SaveState atomically replaces a named JSON blob in a scope and namespace.
+// Existing callers retain their store-scoped paths. Files are private (0600).
+func SaveState(configDir, scope, namespace, key string, data json.RawMessage) error {
+	return writeState(configDir, scope, namespace, key, data, false)
+}
+
+// CreateState atomically creates a blob without overwriting an existing entry.
+// A duplicate returns an error wrapping os.ErrExist.
+func CreateState(configDir, scope, namespace, key string, data json.RawMessage) error {
+	return writeState(configDir, scope, namespace, key, data, true)
+}
+
+func writeState(configDir, scope, namespace, key string, data json.RawMessage, exclusive bool) error {
+	if !json.Valid(data) {
+		return fmt.Errorf("state payload is not valid JSON")
+	}
+	dir := stateDirPath(configDir, scope, namespace)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
+	file, err := os.CreateTemp(dir, ".state-*")
+	if err != nil {
+		return fmt.Errorf("create state file: %w", err)
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	_, writeErr := file.Write(data)
+	if writeErr == nil {
+		writeErr = file.Sync()
+	}
+	closeErr := file.Close()
+	if writeErr != nil {
+		return fmt.Errorf("write state: %w", writeErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close state: %w", closeErr)
+	}
+	path := stateFilePath(configDir, scope, namespace, key)
+	if exclusive {
+		err = os.Link(file.Name(), path)
+	} else {
+		err = os.Rename(file.Name(), path)
+	}
+	if err != nil {
+		return fmt.Errorf("publish state: %w", err)
+	}
 
-	path := stateFilePath(configDir, handle, namespace, key)
-	return os.WriteFile(path, data, 0o600)
+	return nil
 }
 
 // LoadState reads a named state blob. Returns nil if it doesn't exist.

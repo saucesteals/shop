@@ -76,9 +76,27 @@ func request(ctx context.Context, client *http.Client, path string, query url.Va
 	if err != nil {
 		return nil, false, shop.Errorf(shop.ErrInternal, "create tracking request")
 	}
-	req.Header.Set("User-Agent", "shop/0 (+https://github.com/saucesteals/shop)")
+	// Match the consumer browser request profile. Leave Accept-Encoding to
+	// net/http so only supported, automatically decoded compression is advertised.
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Priority", "u=1, i")
 	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Referer", origin+"/en")
+	if number := query.Get("track"); number != "" {
+		req.Header.Set("Referer", origin+"/en?"+url.Values{"trackingNumber": {number}}.Encode())
+	}
+	if path == "/en" {
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+		req.Header.Set("Sec-Fetch-Dest", "document")
+		req.Header.Set("Sec-Fetch-Mode", "navigate")
+		req.Header.Set("Sec-Fetch-Site", "none")
+		req.Header.Set("Sec-Fetch-User", "?1")
+		req.Header.Set("Upgrade-Insecure-Requests", "1")
+		req.Header.Set("Priority", "u=0, i")
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, false, shop.Errorf(shop.ErrNetwork, "tracking request failed")
