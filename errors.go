@@ -79,6 +79,9 @@ const (
 	// Input errors.
 	ErrInvalidInput ErrorCode = "invalid_input"
 
+	// Upstream service errors.
+	ErrUpstream ErrorCode = "upstream_error"
+
 	// System errors.
 	ErrInternal    ErrorCode = "internal"
 	ErrNetwork     ErrorCode = "network"
@@ -100,6 +103,7 @@ var ExitCodes = map[ErrorCode]int{
 	ErrQuantityLimit: 42,
 	ErrRateLimited:   50,
 	ErrStoreError:    51,
+	ErrUpstream:      51,
 	ErrNetwork:       60,
 	ErrInvalidInput:  2,
 	ErrConfigError:   3,

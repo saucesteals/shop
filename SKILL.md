@@ -286,3 +286,9 @@ Show 2–3 reviews max by default, top helpful first.
 - Cart state is per-store, persisted locally. `cart clear` before starting a new purchase flow.
 - Amazon only returns the buy-box offer from `offers` (single seller). Other providers may differ.
 - `checkout` returns a `checkoutId` tied to cart state — if anything changes, re-checkout.
+
+## Shipment tracking (experimental)
+
+`shop track <tracking-number>` returns available shipment history as JSON, without a store login. Supports the existing `--timeout`, `--json`, and `--pretty` flags; `--store` does not apply.
+
+The initial source is Track.global, an unofficial third-party service. This command reads available cached history; cold lookups may be unavailable and carrier refresh timing is not guaranteed. `fetchedAt` is retrieval time, not scan freshness; `freshness` remains `unknown`. Events preserve source-local dates/times without an assumed timezone. An unavailable history returns structured `upstream_error` (exit 51), not a false claim that the shipment does not exist. Rate limits use `rate_limited` (exit 50).
