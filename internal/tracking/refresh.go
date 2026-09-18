@@ -2,11 +2,9 @@ package tracking
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/saucesteals/shop"
-	"github.com/saucesteals/shop/internal/config"
 )
 
 // Tracker retrieves a shipment's available history.
@@ -53,28 +51,18 @@ func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string) (*R
 			continue
 		}
 		summary := Summary{Shipment: entry, Freshness: "unknown"}
-		previous, loadErr := config.LoadState(l.ConfigDir, "", "shipment-history", entry.TrackingNumber)
-		if loadErr != nil {
-			return nil, ledgerError(loadErr)
-		}
-		if previous != nil {
-			var snapshot shop.TrackingResult
-			if err := json.Unmarshal(previous, &snapshot); err != nil {
-				return nil, ledgerError(err)
-			}
-			summary.apply(&snapshot)
+		// Keep the full history in storage/list output, not the compact summary.
+		summary.History = nil
+		if entry.History != nil {
+			summary.apply(entry.History)
 		}
 		snapshot, lookupErr := tracker.Track(ctx, entry.TrackingNumber)
 		if lookupErr == nil && (snapshot == nil || len(snapshot.Events) == 0 || snapshot.TrackingNumber != entry.TrackingNumber) {
 			lookupErr = shop.Errorf(shop.ErrUpstream, "tracking source returned an invalid snapshot")
 		}
 		if lookupErr == nil {
-			data, marshalErr := json.Marshal(snapshot)
-			if marshalErr != nil {
-				lookupErr = marshalErr
-			} else {
-				lookupErr = config.SaveState(l.ConfigDir, "", "shipment-history", entry.TrackingNumber, data)
-			}
+			entry.History = snapshot
+			lookupErr = l.save(entry)
 			if lookupErr == nil {
 				summary.apply(snapshot)
 				summary.Refreshed = true

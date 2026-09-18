@@ -10,7 +10,7 @@ import (
 	"github.com/saucesteals/shop/internal/config"
 )
 
-// Ledger stores one private immutable attribution record per tracking number.
+// Ledger stores one private record per tracking number.
 // Adding an existing number fails rather than silently overwriting its metadata.
 type Ledger struct {
 	ConfigDir string
@@ -57,17 +57,23 @@ func (l Ledger) List() ([]shop.Shipment, error) {
 		if err := json.Unmarshal(data, &shipment); err != nil {
 			return nil, ledgerError(err)
 		}
+		if err := l.migrateHistory(&shipment); err != nil {
+			return nil, ledgerError(err)
+		}
 		result = append(result, shipment)
 	}
 
 	return result, nil
 }
 
-// Remove deletes local attribution only; it does not affect the carrier shipment.
+// Remove deletes the local shipment and history, not the carrier shipment.
 func (l Ledger) Remove(value string) error {
 	number, err := Number(value)
 	if err != nil {
 		return err
+	}
+	if err := config.DeleteState(l.ConfigDir, "", "shipment-history", number); err != nil {
+		return ledgerError(err)
 	}
 	if err := config.DeleteState(l.ConfigDir, "", "shipments", number); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return ledgerError(err)
@@ -78,4 +84,38 @@ func (l Ledger) Remove(value string) error {
 
 func ledgerError(err error) error {
 	return shop.Errorf(shop.ErrConfigError, "shipment ledger: %v", err)
+}
+
+// save replaces a shipment record atomically through the shared state layer.
+func (l Ledger) save(shipment shop.Shipment) error {
+	data, err := json.MarshalIndent(shipment, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return config.SaveState(l.ConfigDir, "", "shipments", shipment.TrackingNumber, data)
+}
+
+// migrateHistory folds legacy split snapshots into their shipment before cleanup.
+// An existing embedded history wins, making interrupted cleanup safe to retry.
+func (l Ledger) migrateHistory(shipment *shop.Shipment) error {
+	data, err := config.LoadState(l.ConfigDir, "", "shipment-history", shipment.TrackingNumber)
+	if err != nil || data == nil {
+		return err
+	}
+	if shipment.History == nil {
+		var history shop.TrackingResult
+		if err := json.Unmarshal(data, &history); err != nil {
+			return err
+		}
+		if history.TrackingNumber != shipment.TrackingNumber || len(history.Events) == 0 {
+			return errors.New("invalid saved shipment history")
+		}
+		shipment.History = &history
+		if err := l.save(*shipment); err != nil {
+			return err
+		}
+	}
+
+	return config.DeleteState(l.ConfigDir, "", "shipment-history", shipment.TrackingNumber)
 }

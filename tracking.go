@@ -18,12 +18,13 @@ type TrackingEvent struct {
 	Location    string `json:"location,omitempty"`
 }
 
-// Shipment records local attribution for a tracking number.
+// Shipment stores local attribution and the last successful tracking history.
 type Shipment struct {
-	TrackingNumber string `json:"trackingNumber"`
-	Label          string `json:"label,omitempty"`
-	Merchant       string `json:"merchant,omitempty"`
-	OrderID        string `json:"orderId,omitempty"`
-	Note           string `json:"note,omitempty"`
-	AddedAt        string `json:"addedAt"`
+	TrackingNumber string          `json:"trackingNumber"`
+	Label          string          `json:"label,omitempty"`
+	Merchant       string          `json:"merchant,omitempty"`
+	OrderID        string          `json:"orderId,omitempty"`
+	Note           string          `json:"note,omitempty"`
+	AddedAt        string          `json:"addedAt"`
+	History        *TrackingResult `json:"history,omitempty"`
 }
