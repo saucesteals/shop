@@ -5,14 +5,14 @@ import (
 
 	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/internal/tracking"
-	"github.com/saucesteals/shop/internal/tracking/trackglobal"
+	"github.com/saucesteals/shop/internal/tracking/carriers"
 )
 
 func (c *CLI) newTrackCmd() *cobra.Command {
 	track := &cobra.Command{
 		Use:   "track <tracking-number>",
 		Short: "Look up available shipment history (experimental)",
-		Long:  "Look up cached shipment history without a store login. Cold lookups may be unavailable; results do not guarantee current carrier status.",
+		Long:  "Look up shipment history without a store login. Cold lookups may be unavailable; results do not guarantee current carrier status.",
 		Args:  cobra.ExactArgs(1),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := cmd.Root().PersistentPreRunE(cmd, args); err != nil {
@@ -26,7 +26,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client := &trackglobal.Client{}
+			client := &carriers.Client{}
 			result, err := client.Track(ctx, args[0])
 			if err != nil {
 				return err
@@ -100,7 +100,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			}
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			result, err := c.shipmentLedger().Refresh(ctx, &trackglobal.Client{}, number)
+			result, err := c.shipmentLedger().Refresh(ctx, &carriers.Client{}, number)
 			if err != nil {
 				return err
 			}

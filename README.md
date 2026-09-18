@@ -349,7 +349,7 @@ shop track remove <tracking-number>
 - `remove` deletes only the local entry; removing an absent number is harmless.
 - Lookups do not automatically save packages. Labels, merchant names, order IDs, and notes stay local.
 
-Tracking is experimental and currently uses Track.global. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
+Tracking is experimental. Standard UPS tracking numbers use the carrier’s tracking service; other numbers use Track.global. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
 
 `--timeout`, `--json`, `--pretty`, and `--config` apply. `--store` does not.
 
