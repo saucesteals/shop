@@ -23,12 +23,12 @@ type TrackingSnapshot struct {
 	FetchedAt      time.Time `json:"fetchedAt"`
 	// Freshness describes upstream freshness; "unknown" makes no live-data claim.
 	Freshness string `json:"freshness"`
-	// Events are ordered newest first by the source.
+	// Events are ordered newest first.
 	Events []TrackingEvent `json:"events"`
 }
 
-// TrackingEvent is one carrier scan. Date and Time retain the source's local
-// text because a timezone is not supplied; they must not be interpreted as UTC.
+// TrackingEvent is one carrier scan. Date and Time retain the source's timezone
+// context, when supplied; values without an offset must not be interpreted as UTC.
 type TrackingEvent struct {
 	Date        string `json:"date"`
 	Time        string `json:"time,omitempty"`

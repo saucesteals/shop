@@ -3,14 +3,12 @@ package carriers
 
 import (
 	"github.com/saucesteals/shop/internal/tracking"
-	"github.com/saucesteals/shop/internal/tracking/trackglobal"
+	"github.com/saucesteals/shop/internal/tracking/fedex"
+	"github.com/saucesteals/shop/internal/tracking/stamps"
 	"github.com/saucesteals/shop/internal/tracking/ups"
 )
 
-// New constructs the built-in registry. Providers declare their own carriers;
-// the general source also handles numbers without a dedicated registration.
+// New constructs the registry from each provider's declared carriers.
 func New() (*tracking.Registry, error) {
-	general := &trackglobal.Client{}
-
-	return tracking.NewRegistry(general, &ups.Client{}, general)
+	return tracking.NewRegistry(&ups.Client{}, &stamps.Client{}, &fedex.Client{})
 }

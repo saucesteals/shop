@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -60,13 +59,13 @@ func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingSnapsh
 		if cookie.Name == "X-XSRF-TOKEN-ST" {
 			token, err = url.PathUnescape(cookie.Value)
 			if err != nil {
-				return nil, upstreamError("invalid_session")
+				return nil, tracking.UpstreamError("invalid_session")
 			}
 			break
 		}
 	}
 	if token == "" {
-		return nil, upstreamError("session_unavailable")
+		return nil, tracking.UpstreamError("session_unavailable")
 	}
 	payload, err := json.Marshal(struct {
 		Locale         string
@@ -108,7 +107,7 @@ func request(ctx context.Context, client *http.Client, endpoint string, payload 
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrInternal, "create tracking request")
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", tracking.UserAgent)
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	if payload != nil {
@@ -118,29 +117,6 @@ func request(ctx context.Context, client *http.Client, endpoint string, payload 
 		req.Header.Set("Referer", origin+"/")
 		req.Header.Set("X-XSRF-TOKEN", token)
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "carrier tracking request failed")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, shop.Errorf(shop.ErrRateLimited, "tracking source rate limited")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
-	}
-	const maxBody = 2 << 20
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "read tracking response")
-	}
-	if len(body) > maxBody {
-		return nil, upstreamError("response_too_large")
-	}
 
-	return body, nil
-}
-
-func upstreamError(reason string) *shop.Error {
-	return shop.Errorf(shop.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
+	return tracking.Fetch(client, req)
 }

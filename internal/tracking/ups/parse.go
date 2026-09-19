@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/saucesteals/shop"
+	"github.com/saucesteals/shop/internal/tracking"
 )
 
 type response struct {
@@ -24,10 +25,10 @@ type response struct {
 func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 	var result response
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, upstreamError("invalid_response")
+		return nil, tracking.UpstreamError("invalid_response")
 	}
 	if result.StatusCode != "200" {
-		return nil, upstreamError("history_unavailable")
+		return nil, tracking.UpstreamError("history_unavailable")
 	}
 	for _, detail := range result.TrackDetails {
 		if !strings.EqualFold(detail.TrackingNumber, number) {
@@ -42,16 +43,16 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 				Location:    strings.TrimSpace(html.UnescapeString(activity.Location)),
 			}
 			if event.Date == "" || event.Description == "" {
-				return nil, upstreamError("invalid_response")
+				return nil, tracking.UpstreamError("invalid_response")
 			}
 			events = append(events, event)
 		}
 		if len(events) == 0 {
-			return nil, upstreamError("history_unavailable")
+			return nil, tracking.UpstreamError("history_unavailable")
 		}
 
 		return events, nil
 	}
 
-	return nil, upstreamError("history_unavailable")
+	return nil, tracking.UpstreamError("history_unavailable")
 }

@@ -13,22 +13,17 @@ type Provider interface {
 	Carriers() []Carrier
 }
 
-// Registry is an immutable carrier-to-provider mapping with an explicit fallback.
+// Registry is an immutable carrier-to-provider mapping.
 // Construct it once before concurrent use; providers must support concurrent lookups.
 type Registry struct {
 	handlers map[Carrier]Tracker
-	fallback Tracker
 }
 
 // NewRegistry rejects undeclared carriers and duplicate handlers instead of
 // letting registration order silently decide which source wins.
-func NewRegistry(fallback Tracker, providers ...Provider) (*Registry, error) {
-	if fallback == nil {
-		return nil, fmt.Errorf("tracking fallback is required")
-	}
+func NewRegistry(providers ...Provider) (*Registry, error) {
 	r := &Registry{
 		handlers: make(map[Carrier]Tracker),
-		fallback: fallback,
 	}
 	for _, provider := range providers {
 		if provider == nil {
@@ -40,7 +35,7 @@ func NewRegistry(fallback Tracker, providers ...Provider) (*Registry, error) {
 		}
 		for _, carrier := range carriers {
 			switch carrier {
-			case UPS, USPS:
+			case UPS, USPS, FedEx:
 			default:
 				return nil, fmt.Errorf("undeclared tracking carrier %q", carrier)
 			}
@@ -54,8 +49,8 @@ func NewRegistry(fallback Tracker, providers ...Provider) (*Registry, error) {
 	return r, nil
 }
 
-// Track selects one provider. Fallback handles unknown or unregistered carriers,
-// not failed requests: a selected provider's error is returned unchanged.
+// Track selects the registered provider or reports an unsupported carrier.
+// Provider errors are returned unchanged; requests never silently switch sources.
 func (r *Registry) Track(ctx context.Context, number string) (*shop.TrackingSnapshot, error) {
 	number, err := Number(number)
 	if err != nil {
@@ -63,7 +58,7 @@ func (r *Registry) Track(ctx context.Context, number string) (*shop.TrackingSnap
 	}
 	provider, ok := r.handlers[DetectCarrier(number)]
 	if !ok {
-		provider = r.fallback
+		return nil, shop.Errorf(shop.ErrNotSupported, "tracking carrier is not supported")
 	}
 
 	return provider.Track(ctx, number)

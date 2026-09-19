@@ -349,7 +349,13 @@ shop track remove <tracking-number>
 - `remove` deletes only the local entry; removing an absent number is harmless.
 - Lookups do not automatically save packages. Labels, merchant names, order IDs, and notes stay local.
 
-Tracking is experimental. Standard UPS tracking numbers use the carrier’s tracking service; other numbers use Track.global. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
+Tracking supports USPS, standard UPS, and 12- or 15-digit FedEx numbers. Unsupported formats return `not_supported`; lookups do not fall back to another source.
+
+- USPS tracking is provided by Stamps.
+- UPS uses its carrier tracking service.
+- FedEx uses its carrier API and depends on Deliveries for short-lived access tokens. Tokens are not stored.
+
+Results may be cached. `fetchedAt` is the retrieval time, not the time the carrier last checked the shipment; `freshness` remains `unknown`. Event times preserve timezone information when supplied. Shop does not start background monitoring.
 
 `--timeout`, `--json`, `--pretty`, and `--config` apply. `--store` does not.
 
@@ -535,9 +541,9 @@ That's it. No config files, no factory registration, no dependency injection. Th
 
 Tracking providers are separate from shopping stores. Each implements `tracking.Provider`: `Track` retrieves a snapshot and `Carriers` declares the typed carrier IDs it handles. `tracking.NewRegistry` builds the routing map and rejects duplicate handlers or undeclared carrier IDs.
 
-`internal/tracking/carriers.New` wires the built-in providers and an explicit general-purpose fallback. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler use the fallback; a selected provider's error is returned without silently switching sources.
+`internal/tracking/carriers.New` wires the built-in providers. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
 
-To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and, where its number format is unambiguous, a detection rule.
+To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
 
 ---
 
