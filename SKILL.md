@@ -158,7 +158,7 @@ shop track <tracking-number>
 shop track <tracking-number> | jq '{trackingNumber, source, latest: .events[0], url}'
 ```
 
-USPS uses Stamps; UPS uses its carrier service. FedEx uses the carrier API through a Deliveries guest-token bootstrap. The live request/error path is verified, but real FedEx scans are not yet verified—do not promise end-to-end support. Unknown formats return `not_supported`; no fallback provider is used.
+Supported formats are USPS, standard UPS, and 12- or 15-digit FedEx numbers. On `not_supported`, explain that the number's format is unsupported; do not treat it as proof that the shipment does not exist. Provider failures are returned without switching sources.
 
 Response: `trackingNumber`, `source`, `url`, `fetchedAt`, `freshness`, and `events[]` with `date`, optional `time`, `description`, and optional `location`.
 
@@ -177,7 +177,7 @@ shop track remove <tracking-number>
 
 For a named saved package, run `track list`, match its label/merchant/order ID, then look up its `trackingNumber`. Ask which package if multiple entries match; do not guess. Do not invent attribution or overwrite an existing record by removing/re-adding it unless requested.
 
-Report the latest scan's description, date/time, location, and tracking link. Only report an ETA if the source explicitly supplies it; distinguish an estimate from a guarantee. `fetchedAt` is lookup time, not carrier freshness. `freshness: "unknown"` means freshness is unverified. Do not assume a timezone for event times or promise automatic monitoring.
+Report the latest scan's description, date/time, location, and tracking link. Only report an ETA if the source explicitly supplies it; distinguish an estimate from a guarantee. `fetchedAt` is lookup time, not carrier freshness. `freshness: "unknown"` means freshness is unverified. Preserve explicit timezone offsets; do not infer a timezone when one is absent or promise automatic monitoring.
 
 #### Refresh summaries
 
