@@ -349,7 +349,7 @@ shop track remove <tracking-number>
 - `remove` deletes only the local entry; removing an absent number is harmless.
 - Lookups do not automatically save packages. Labels, merchant names, order IDs, and notes stay local.
 
-Tracking is experimental. USPS numbers use Stamps; standard UPS and FedEx numbers use carrier-specific clients. FedEx is provisional: its public tracking endpoint currently rejects live requests with HTTP 403. Unsupported formats return `not_supported`, with no general-purpose fallback. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
+Tracking is experimental. USPS numbers use Stamps; standard UPS and FedEx numbers use carrier-specific clients. FedEx uses the carrier API with a short-lived guest token supplied by Deliveries; that third-party bootstrap must remain available. Real FedEx scan retrieval is not yet verified. Unsupported formats return `not_supported`, with no general-purpose fallback. Results may be cached: `fetchedAt` records when Shop retrieved the response, not when the carrier last checked it. `freshness` is `unknown`; event times retain the source's timezone context rather than assuming UTC. No background monitoring is started.
 
 `--timeout`, `--json`, `--pretty`, and `--config` apply. `--store` does not.
 
@@ -537,7 +537,7 @@ Tracking providers are separate from shopping stores. Each implements `tracking.
 
 `internal/tracking/carriers.New` wires the built-in providers. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
 
-To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and, a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
+To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
 
 ---
 

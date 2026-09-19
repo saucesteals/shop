@@ -158,7 +158,7 @@ shop track <tracking-number>
 shop track <tracking-number> | jq '{trackingNumber, source, latest: .events[0], url}'
 ```
 
-USPS uses Stamps; UPS uses its carrier service. FedEx is provisional and currently fails live tracking with HTTP 403—do not promise working FedEx tracking. Unknown formats return `not_supported`; no fallback provider is used.
+USPS uses Stamps; UPS uses its carrier service. FedEx uses the carrier API through a Deliveries guest-token bootstrap. The live request/error path is verified, but real FedEx scans are not yet verified—do not promise end-to-end support. Unknown formats return `not_supported`; no fallback provider is used.
 
 Response: `trackingNumber`, `source`, `url`, `fetchedAt`, `freshness`, and `events[]` with `date`, optional `time`, `description`, and optional `location`.
 

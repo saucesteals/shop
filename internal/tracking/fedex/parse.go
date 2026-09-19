@@ -2,26 +2,39 @@ package fedex
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/internal/tracking"
 )
 
+type numberInfo struct {
+	Number string `json:"trackingNumber"`
+}
+
 type response struct {
 	Output struct {
-		Packages []struct {
-			Number    string `json:"trackingNbr"`
-			ErrorCode string `json:"trackErrCD"`
-			Events    []struct {
-				Date     string `json:"date"`
-				Time     string `json:"time"`
-				Offset   string `json:"gmtOffset"`
-				Status   string `json:"status"`
-				Details  string `json:"scanDetails"`
-				Location string `json:"scanLocation"`
-			} `json:"scanEventList"`
-		} `json:"packages"`
+		Shipments []struct {
+			Number  string `json:"trackingNumber"`
+			Results []struct {
+				NumberInfo numberInfo `json:"trackingNumberInfo"`
+				Error      struct {
+					Code string `json:"code"`
+				} `json:"error"`
+				Events []struct {
+					Date        time.Time `json:"date"`
+					Description string    `json:"eventDescription"`
+					Exception   string    `json:"exceptionDescription"`
+					Location    struct {
+						City    string `json:"city"`
+						State   string `json:"stateOrProvinceCode"`
+						Country string `json:"countryCode"`
+					} `json:"scanLocation"`
+				} `json:"scanEvents"`
+			} `json:"trackResults"`
+		} `json:"completeTrackResults"`
 	} `json:"output"`
 }
 
@@ -30,40 +43,52 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 	if json.Unmarshal(body, &result) != nil {
 		return nil, tracking.UpstreamError("invalid_response")
 	}
-	if len(result.Output.Packages) != 1 {
+	if len(result.Output.Shipments) != 1 {
 		return nil, tracking.UpstreamError("shipment_unavailable")
 	}
-	shipment := result.Output.Packages[0]
+	shipment := result.Output.Shipments[0]
 	if shipment.Number != number {
 		return nil, tracking.UpstreamError("shipment_mismatch")
 	}
-	if shipment.ErrorCode != "" {
+	// Reused numbers may have multiple shipments; never select one arbitrarily.
+	if len(shipment.Results) != 1 {
 		return nil, tracking.UpstreamError("shipment_unavailable")
 	}
-	if len(shipment.Events) == 0 {
+	detail := shipment.Results[0]
+	if detail.NumberInfo.Number != number {
+		return nil, tracking.UpstreamError("shipment_mismatch")
+	}
+	if detail.Error.Code != "" {
+		return nil, tracking.UpstreamError("shipment_unavailable")
+	}
+	if len(detail.Events) == 0 {
 		return nil, tracking.UpstreamError("history_unavailable")
 	}
-	events := make([]shop.TrackingEvent, 0, len(shipment.Events))
-	for _, scan := range shipment.Events {
-		description := strings.TrimSpace(scan.Status)
-		if details := strings.TrimSpace(scan.Details); details != "" && details != description {
-			if description != "" {
-				description += ": "
-			}
-			description += details
-		}
-		if scan.Date == "" || description == "" {
+	sort.SliceStable(detail.Events, func(i, j int) bool {
+		return detail.Events[i].Date.After(detail.Events[j].Date)
+	})
+
+	events := make([]shop.TrackingEvent, 0, len(detail.Events))
+	for _, scan := range detail.Events {
+		when := scan.Date
+		description := strings.TrimSpace(scan.Description)
+		if when.IsZero() || description == "" {
 			return nil, tracking.UpstreamError("invalid_response")
 		}
-		scanTime := scan.Time
-		if scanTime != "" {
-			scanTime += scan.Offset
+		if exception := strings.TrimSpace(scan.Exception); exception != "" && exception != description {
+			description += ": " + exception
+		}
+		var location []string
+		for _, part := range []string{scan.Location.City, scan.Location.State, scan.Location.Country} {
+			if part = strings.TrimSpace(part); part != "" {
+				location = append(location, part)
+			}
 		}
 		events = append(events, shop.TrackingEvent{
-			Date:        scan.Date,
-			Time:        scanTime,
+			Date:        when.Format("2006-01-02"),
+			Time:        when.Format("15:04:05Z07:00"),
 			Description: description,
-			Location:    scan.Location,
+			Location:    strings.Join(location, ", "),
 		})
 	}
 
