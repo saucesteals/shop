@@ -12,10 +12,12 @@ const (
 	UPS Carrier = "ups"
 	// USPS identifies supported domestic and international postal numbers.
 	USPS Carrier = "usps"
+	// FedEx identifies standard express and ground package numbers.
+	FedEx Carrier = "fedex"
 )
 
-// DetectCarrier recognizes unambiguous supported formats, not shipment validity.
-// Ambiguous formats deliberately use the general tracking source.
+// DetectCarrier recognizes supported number formats, not shipment validity.
+// Numeric formats are heuristics; unsupported lengths remain unknown.
 func DetectCarrier(number string) Carrier {
 	number = strings.ToUpper(strings.TrimSpace(number))
 	if len(number) == 18 && strings.HasPrefix(number, "1Z") && asciiIdentifier(number[2:], true) {
@@ -26,6 +28,10 @@ func DetectCarrier(number string) Carrier {
 	}
 	if len(number) == 13 && strings.HasSuffix(number, "US") && number[0] >= 'A' && number[0] <= 'Z' && number[1] >= 'A' && number[1] <= 'Z' && asciiIdentifier(number[2:11], false) {
 		return USPS
+	}
+
+	if (len(number) == 12 || len(number) == 15) && asciiIdentifier(number, false) {
+		return FedEx
 	}
 
 	return Unknown
