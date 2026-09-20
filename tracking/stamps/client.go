@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/tracking"
 )
 
@@ -44,36 +43,36 @@ func (c *Client) Carriers() []tracking.Carrier {
 
 // Track reads the current published scan history, which may be cached upstream.
 func (c *Client) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
-	number, err := tracking.Number(number)
+	number, err := tracking.NormalizeNumber(number)
 	if err != nil {
 		return nil, err
 	}
 	if tracking.DetectCarrier(number) != tracking.USPS {
-		return nil, shop.Errorf(shop.ErrInvalidInput, "unsupported carrier tracking number")
+		return nil, &tracking.Error{Kind: tracking.ErrInvalidInput, Message: "unsupported carrier tracking number"}
 	}
 	endpoint := "https://www.stamps.com/tracking-details/?" + url.Values{"t": {number}}.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "create tracking request")
+		return nil, &tracking.Error{Kind: tracking.ErrInternal, Message: "create tracking request"}
 	}
 	req.Header.Set("Accept", "text/html")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "carrier tracking request failed")
+		return nil, &tracking.Error{Kind: tracking.ErrNetwork, Message: "carrier tracking request failed"}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, shop.Errorf(shop.ErrRateLimited, "tracking source rate limited").WithDetails(map[string]any{"retryAfter": resp.Header.Get("Retry-After")})
+		return nil, &tracking.Error{Kind: tracking.ErrRateLimited, RetryAfter: resp.Header.Get("Retry-After")}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
+		return nil, &tracking.Error{Kind: tracking.ErrUpstream, Reason: "http_error", StatusCode: resp.StatusCode}
 	}
 	const maxBody = 2 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "read tracking response")
+		return nil, &tracking.Error{Kind: tracking.ErrNetwork, Message: "read tracking response"}
 	}
 	if len(body) > maxBody {
 		return nil, upstreamError("response_too_large")
@@ -233,6 +232,6 @@ func nodeText(n *html.Node) string {
 }
 
 // upstreamError identifies an unusable tracking response without leaking its contents.
-func upstreamError(reason string) *shop.Error {
-	return shop.Errorf(shop.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
+func upstreamError(reason string) *tracking.Error {
+	return &tracking.Error{Kind: tracking.ErrUpstream, Reason: reason}
 }

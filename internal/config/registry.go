@@ -6,16 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/saucesteals/shop"
 )
 
 const registryFile = "registry.json"
 
 // Registry is the persisted store-to-provider mapping.
 type Registry struct {
-	Version int                  `json:"version"`
-	Stores  []shop.RegistryEntry `json:"stores"`
+	Version int             `json:"version"`
+	Stores  []RegistryEntry `json:"stores"`
 }
 
 // LoadRegistry reads the registry from the given directory. If the file
@@ -56,7 +54,7 @@ func SaveRegistry(dir string, reg *Registry) error {
 }
 
 // Lookup finds a registry entry by alias or domain. Returns nil if not found.
-func (r *Registry) Lookup(value string) *shop.RegistryEntry {
+func (r *Registry) Lookup(value string) *RegistryEntry {
 	normalized := normalizeDomain(value)
 
 	for i := range r.Stores {
@@ -71,7 +69,7 @@ func (r *Registry) Lookup(value string) *shop.RegistryEntry {
 
 // Add adds or updates a registry entry. If an entry with the same domain
 // already exists, it is updated.
-func (r *Registry) Add(entry shop.RegistryEntry) {
+func (r *Registry) Add(entry RegistryEntry) {
 	for i := range r.Stores {
 		if r.Stores[i].Domain == entry.Domain {
 			r.Stores[i] = entry
@@ -84,8 +82,8 @@ func (r *Registry) Add(entry shop.RegistryEntry) {
 }
 
 // FilterByProvider returns entries matching the given provider name.
-func (r *Registry) FilterByProvider(provider string) []shop.RegistryEntry {
-	var result []shop.RegistryEntry
+func (r *Registry) FilterByProvider(provider string) []RegistryEntry {
+	var result []RegistryEntry
 	for _, entry := range r.Stores {
 		if entry.Provider == provider {
 			result = append(result, entry)
@@ -99,7 +97,7 @@ func (r *Registry) FilterByProvider(provider string) []shop.RegistryEntry {
 func DefaultRegistry() *Registry {
 	return &Registry{
 		Version: 1,
-		Stores: []shop.RegistryEntry{
+		Stores: []RegistryEntry{
 			{
 				Alias:    "amazon",
 				Domain:   "amazon.com",
@@ -124,4 +122,18 @@ func normalizeDomain(s string) string {
 	}
 
 	return strings.ToLower(s)
+}
+
+// RegistryEntry is a single known store in the persistent registry.
+type RegistryEntry struct {
+	Alias          string         `json:"alias"`
+	Domain         string         `json:"domain"`
+	Provider       string         `json:"provider"`
+	Name           string         `json:"name"`
+	Country        string         `json:"country,omitempty"`
+	Currency       string         `json:"currency,omitempty"`
+	BuiltIn        bool           `json:"builtIn"`
+	DetectedAt     string         `json:"detectedAt,omitempty"`
+	DetectedBy     string         `json:"detectedBy,omitempty"`
+	ProviderConfig map[string]any `json:"providerConfig,omitempty"`
 }

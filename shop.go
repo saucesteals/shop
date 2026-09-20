@@ -1,5 +1,5 @@
-// Package shop defines the core interfaces and types for a multi-platform
-// shopping CLI. Providers implement these interfaces; the CLI consumes them.
+// Package shop provides a configured client for shopping and shipment tracking.
+// Shopping providers implement its store interfaces; the CLI uses the same client.
 package shop
 
 import "context"

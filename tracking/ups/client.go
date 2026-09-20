@@ -15,7 +15,6 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/tracking"
 )
 
@@ -48,16 +47,16 @@ func (c *Client) Carriers() []tracking.Carrier {
 
 // Track retrieves scans without retaining cookies or account information.
 func (c *Client) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
-	number, err := tracking.Number(number)
+	number, err := tracking.NormalizeNumber(number)
 	if err != nil {
 		return nil, err
 	}
 	if tracking.DetectCarrier(number) != tracking.UPS {
-		return nil, shop.Errorf(shop.ErrInvalidInput, "unsupported carrier tracking number")
+		return nil, &tracking.Error{Kind: tracking.ErrInvalidInput, Message: "unsupported carrier tracking number"}
 	}
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "create tracking session")
+		return nil, &tracking.Error{Kind: tracking.ErrInternal, Message: "create tracking session"}
 	}
 	client := *c.http
 	client.Jar = jar
@@ -92,7 +91,7 @@ func (c *Client) Track(ctx context.Context, number string) (*tracking.Snapshot, 
 		Requester:      "ST/trackdetails",
 	})
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "encode tracking request")
+		return nil, &tracking.Error{Kind: tracking.ErrInternal, Message: "encode tracking request"}
 	}
 	body, err := request(ctx, &client, "https://webapis.ups.com/track/api/Track/GetStatus?loc=en_US", payload, token)
 	if err != nil {
@@ -121,7 +120,7 @@ func request(ctx context.Context, client *http.Client, endpoint string, payload 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "create tracking request")
+		return nil, &tracking.Error{Kind: tracking.ErrInternal, Message: "create tracking request"}
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
@@ -136,19 +135,19 @@ func request(ctx context.Context, client *http.Client, endpoint string, payload 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "carrier tracking request failed")
+		return nil, &tracking.Error{Kind: tracking.ErrNetwork, Message: "carrier tracking request failed"}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, shop.Errorf(shop.ErrRateLimited, "tracking source rate limited").WithDetails(map[string]any{"retryAfter": resp.Header.Get("Retry-After")})
+		return nil, &tracking.Error{Kind: tracking.ErrRateLimited, RetryAfter: resp.Header.Get("Retry-After")}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
+		return nil, &tracking.Error{Kind: tracking.ErrUpstream, Reason: "http_error", StatusCode: resp.StatusCode}
 	}
 	const maxBody = 2 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return nil, shop.Errorf(shop.ErrNetwork, "read tracking response")
+		return nil, &tracking.Error{Kind: tracking.ErrNetwork, Message: "read tracking response"}
 	}
 	if len(body) > maxBody {
 		return nil, upstreamError("response_too_large")
@@ -223,6 +222,6 @@ func parseUPS(body []byte, number string) ([]tracking.Event, string, error) {
 }
 
 // upstreamError identifies an unusable tracking response without leaking its contents.
-func upstreamError(reason string) *shop.Error {
-	return shop.Errorf(shop.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
+func upstreamError(reason string) *tracking.Error {
+	return &tracking.Error{Kind: tracking.ErrUpstream, Reason: reason}
 }

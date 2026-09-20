@@ -1,7 +1,9 @@
-// Package tracking provides shipment data, carrier routing, and a saved-shipment ledger.
+// Package tracking provides shipment data, carrier routing, and local shipment storage.
 package tracking
 
-import "time"
+import (
+	"time"
+)
 
 // Shipment is a saved package: local attribution and its last successful lookup.
 // Tracking is nil until the first successful refresh.
@@ -37,4 +39,23 @@ type Event struct {
 	Time        string `json:"time,omitempty"`
 	Description string `json:"description"`
 	Location    string `json:"location,omitempty"`
+}
+
+// Latest returns a copy of the newest scan, or nil if no history is available.
+// A nil snapshot is valid, as saved shipments may not have been refreshed yet.
+func (s *Snapshot) Latest() *Event {
+	if s == nil || len(s.Events) == 0 {
+		return nil
+	}
+	event := s.Events[0]
+
+	return &event
+}
+
+func validateSnapshot(snapshot *Snapshot, number string) error {
+	if snapshot == nil || len(snapshot.Events) == 0 || snapshot.TrackingNumber != number {
+		return &Error{Kind: ErrUpstream, Message: "tracking source returned an invalid snapshot"}
+	}
+
+	return nil
 }

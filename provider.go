@@ -30,10 +30,10 @@ func Register(p Provider) {
 }
 
 // Providers returns all registered providers, sorted by DetectCost
-// (cheapest first). The returned slice must not be modified.
+// (cheapest first). The returned slice is an independent copy.
 func Providers() []Provider {
 	providersMu.RLock()
 	defer providersMu.RUnlock()
 
-	return sorted
+	return slices.Clone(sorted)
 }
