@@ -8,11 +8,6 @@ import (
 	"github.com/saucesteals/shop"
 )
 
-// Tracker retrieves a shipment's available history.
-type Tracker interface {
-	Track(context.Context, string) (*shop.TrackingSnapshot, error)
-}
-
 // RefreshResult summarizes a batch without discarding individual failures.
 type RefreshResult struct {
 	Total     int       `json:"total"`
@@ -23,14 +18,14 @@ type RefreshResult struct {
 
 // Summary combines local attribution and the latest successful lookup.
 type Summary struct {
-	shop.Shipment
-	ExpectedDelivery string              `json:"expectedDelivery,omitempty"`
-	Latest           *shop.TrackingEvent `json:"latest,omitempty"`
-	FetchedAt        time.Time           `json:"fetchedAt,omitzero"`
-	URL              string              `json:"url,omitempty"`
-	Freshness        string              `json:"freshness"`
-	Refreshed        bool                `json:"refreshed"`
-	Error            *shop.Error         `json:"error,omitempty"`
+	Shipment
+	ExpectedDelivery string      `json:"expectedDelivery,omitempty"`
+	Latest           *Event      `json:"latest,omitempty"`
+	FetchedAt        time.Time   `json:"fetchedAt,omitzero"`
+	URL              string      `json:"url,omitempty"`
+	Freshness        string      `json:"freshness"`
+	Refreshed        bool        `json:"refreshed"`
+	Error            *shop.Error `json:"error,omitempty"`
 }
 
 // Refresh updates saved snapshots, preserving previous history on lookup failure.
@@ -98,7 +93,7 @@ func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string, sel
 	return result, nil
 }
 
-func (s *Summary) apply(snapshot *shop.TrackingSnapshot) {
+func (s *Summary) apply(snapshot *Snapshot) {
 	if len(snapshot.Events) > 0 {
 		event := snapshot.Events[0]
 		s.Latest = &event

@@ -1,4 +1,3 @@
-// Package tracking holds shipment-specific validation and local storage.
 package tracking
 
 import (

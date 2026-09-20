@@ -42,16 +42,11 @@ func New(configDir string) (*App, error) {
 		return nil, shop.Errorf(shop.ErrConfigError, "write default config: %v", err)
 	}
 
-	a := &App{
+	return &App{
 		Config:    cfg,
 		Registry:  reg,
 		ConfigDir: configDir,
-	}
-
-	// Wire the global resolver so shop.Resolve() works.
-	shop.SetResolver(a.Resolve)
-
-	return a, nil
+	}, nil
 }
 
 // Resolve takes a --store value and returns a ready Store instance.

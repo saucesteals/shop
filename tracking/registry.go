@@ -7,6 +7,11 @@ import (
 	"github.com/saucesteals/shop"
 )
 
+// Tracker retrieves a shipment's available history.
+type Tracker interface {
+	Track(context.Context, string) (*Snapshot, error)
+}
+
 // Provider declares the carriers for which it supplies tracking history.
 type Provider interface {
 	Tracker
@@ -51,7 +56,7 @@ func NewRegistry(providers ...Provider) (*Registry, error) {
 
 // Track selects the registered provider or reports an unsupported carrier.
 // Provider errors are returned unchanged; requests never silently switch sources.
-func (r *Registry) Track(ctx context.Context, number string) (*shop.TrackingSnapshot, error) {
+func (r *Registry) Track(ctx context.Context, number string) (*Snapshot, error) {
 	number, err := Number(number)
 	if err != nil {
 		return nil, err

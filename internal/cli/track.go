@@ -1,12 +1,13 @@
 package cli
 
 import (
-	"github.com/spf13/cobra"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/saucesteals/shop"
-	"github.com/saucesteals/shop/internal/tracking"
-	"github.com/saucesteals/shop/internal/tracking/carriers"
+	"github.com/saucesteals/shop/tracking"
+	"github.com/saucesteals/shop/tracking/providers"
 )
 
 func (c *CLI) newTrackCmd() *cobra.Command {
@@ -27,7 +28,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client, err := carriers.New()
+			client, err := providers.New(nil)
 			if err != nil {
 				return err
 			}
@@ -48,7 +49,7 @@ func (c *CLI) shipmentLedger() tracking.Ledger {
 }
 
 func (c *CLI) newTrackAddCmd() *cobra.Command {
-	var entry shop.Shipment
+	var entry tracking.Shipment
 	cmd := &cobra.Command{
 		Use: "add <tracking-number>", Short: "Save local shipment attribution", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -118,7 +119,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			}
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client, err := carriers.New()
+			client, err := providers.New(nil)
 			if err != nil {
 				return err
 			}
