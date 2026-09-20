@@ -1,30 +1,13 @@
 package cli
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/tracking"
-	"github.com/saucesteals/shop/tracking/fedex"
-	"github.com/saucesteals/shop/tracking/gofo"
-	"github.com/saucesteals/shop/tracking/stamps"
-	"github.com/saucesteals/shop/tracking/ups"
-	"github.com/saucesteals/shop/tracking/yanwen"
 )
-
-// newTrackingRegistry wires the clients enabled by the CLI.
-func newTrackingRegistry(client *http.Client) (*tracking.Registry, error) {
-	return tracking.NewRegistry(
-		ups.New(client),
-		stamps.New(client),
-		fedex.New(client),
-		gofo.New(client),
-		yanwen.New(client),
-	)
-}
 
 func (c *CLI) newTrackCmd() *cobra.Command {
 	track := &cobra.Command{
@@ -45,10 +28,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client, err := newTrackingRegistry(nil)
-			if err != nil {
-				return err
-			}
+			client := c.app.Tracking()
 			result, err := client.Track(ctx, args[0])
 			if err != nil {
 				return err
@@ -62,10 +42,6 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 	return track
 }
 
-func (c *CLI) shipmentStore() *tracking.Store {
-	return tracking.NewStore(c.app.ConfigDir)
-}
-
 func (c *CLI) newTrackAddCmd() *cobra.Command {
 	var entry tracking.Shipment
 	cmd := &cobra.Command{
@@ -74,7 +50,7 @@ func (c *CLI) newTrackAddCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entry.TrackingNumber = args[0]
-			saved, err := c.shipmentStore().Add(cmd.Context(), entry)
+			saved, err := c.app.Tracking().Add(cmd.Context(), entry)
 			if err != nil {
 				return shipmentError(err, shop.ErrConfigError)
 			}
@@ -124,7 +100,7 @@ func (c *CLI) newTrackListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entries, err := c.shipmentStore().List(cmd.Context(), filter)
+			entries, err := c.app.Tracking().List(cmd.Context(), filter)
 			if err != nil {
 				return shipmentError(err, shop.ErrConfigError)
 			}
@@ -143,7 +119,7 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 		Short: "Remove local shipment attribution",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := c.shipmentStore().Remove(cmd.Context(), args[0]); err != nil {
+			if err := c.app.Tracking().Remove(cmd.Context(), args[0]); err != nil {
 				return shipmentError(err, shop.ErrConfigError)
 			}
 
@@ -167,21 +143,17 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			}
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client, err := newTrackingRegistry(nil)
-			if err != nil {
-				return err
-			}
-			store := c.shipmentStore()
+			store := c.app.Tracking()
 			var results []tracking.Result
 			var refreshErr error
 			if len(args) > 0 {
-				shipment, err := store.Refresh(ctx, client, args[0])
+				shipment, err := store.Refresh(ctx, args[0])
 				if shipment == nil {
 					return shipmentError(err, shop.ErrConfigError)
 				}
 				results = []tracking.Result{{Shipment: *shipment, Err: err}}
 			} else {
-				results, refreshErr = store.RefreshAll(ctx, client, tracking.RefreshOptions{Filter: filter})
+				results, refreshErr = store.RefreshAll(ctx, tracking.RefreshOptions{Filter: filter})
 				if results == nil && refreshErr != nil {
 					return shipmentError(refreshErr, shop.ErrConfigError)
 				}

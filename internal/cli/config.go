@@ -64,7 +64,7 @@ func (c *CLI) newConfigSetCmd() *cobra.Command {
 				cfg.Defaults.Output.Pretty = value == "true"
 			}
 
-			if err := config.Save(c.app.ConfigDir, cfg); err != nil {
+			if err := config.Save(c.app.ConfigDir(), cfg); err != nil {
 				return shop.Errorf(shop.ErrConfigError, "save config: %v", err)
 			}
 

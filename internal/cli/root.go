@@ -3,13 +3,13 @@ package cli
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/saucesteals/shop"
-	"github.com/saucesteals/shop/internal/app"
 	"github.com/saucesteals/shop/internal/config"
 )
 
@@ -19,7 +19,7 @@ var Version = "dev"
 
 // CLI holds shared state across all commands.
 type CLI struct {
-	app *app.App
+	app *shop.Client
 
 	// Global flags.
 	store      string
@@ -50,7 +50,11 @@ func New() *cobra.Command {
 				dir = config.DefaultDir()
 			}
 
-			a, err := app.New(dir)
+			options := shop.Options{ConfigDir: dir}
+			if cmd.Flags().Changed("timeout") {
+				options.HTTPClient = &http.Client{Timeout: c.timeout}
+			}
+			a, err := shop.New(options)
 			if err != nil {
 				return err
 			}
@@ -147,7 +151,7 @@ func (c *CLI) resolveStore(cmd *cobra.Command) (context.Context, context.CancelF
 
 	ctx, cancel := c.timeoutCtx(cmd)
 
-	s, err := c.app.Resolve(ctx, c.store)
+	s, err := c.app.Store(ctx, c.store)
 	if err != nil {
 		cancel()
 

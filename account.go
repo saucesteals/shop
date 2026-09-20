@@ -1,5 +1,7 @@
 package shop
 
+import "github.com/saucesteals/shop/internal/config"
+
 // Address is a shipping/billing address.
 type Address struct {
 	ID         string `json:"id"`
@@ -71,16 +73,5 @@ type StoreInfo struct {
 	LogoURL  string `json:"logoUrl,omitempty"`
 }
 
-// RegistryEntry is a single known store in the persistent registry.
-type RegistryEntry struct {
-	Alias          string         `json:"alias"`
-	Domain         string         `json:"domain"`
-	Provider       string         `json:"provider"`
-	Name           string         `json:"name"`
-	Country        string         `json:"country,omitempty"`
-	Currency       string         `json:"currency,omitempty"`
-	BuiltIn        bool           `json:"builtIn"`
-	DetectedAt     string         `json:"detectedAt,omitempty"`
-	DetectedBy     string         `json:"detectedBy,omitempty"`
-	ProviderConfig map[string]any `json:"providerConfig,omitempty"`
-}
+// RegistryEntry is a known store in the persistent registry.
+type RegistryEntry = config.RegistryEntry

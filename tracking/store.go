@@ -11,22 +11,26 @@ import (
 	"github.com/saucesteals/shop/internal/config"
 )
 
-// Store persists shipment attribution and the last successful tracking snapshot.
-// It performs no carrier requests except through Refresh and RefreshAll.
+// Service persists shipment attribution and the last successful tracking snapshot.
+// Track performs an unsaved lookup; Refresh and RefreshAll persist successful results.
 // Writes are atomic, but read-modify-write operations are not cross-process transactions.
-type Store struct {
+type Service struct {
 	configDir string
+	tracker   Tracker
 }
 
-// NewStore uses state/shipments beneath a Shop configuration directory.
-// It does not create files until the first write. Store owns no open resources.
-func NewStore(configDir string) *Store {
-	return &Store{configDir: configDir}
+// New uses state/shipments beneath a Shop configuration directory.
+// It does not create files until the first write. Service owns no open resources.
+func New(configDir string, tracker Tracker) *Service {
+	return &Service{
+		configDir: configDir,
+		tracker:   tracker,
+	}
 }
 
 // Add saves a new shipment and sets AddedAt. Existing records are never overwritten.
 // The returned error preserves os.ErrExist for errors.Is checks on duplicates.
-func (s *Store) Add(ctx context.Context, shipment Shipment) (*Shipment, error) {
+func (s *Service) Add(ctx context.Context, shipment Shipment) (*Shipment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -49,7 +53,7 @@ func (s *Store) Add(ctx context.Context, shipment Shipment) (*Shipment, error) {
 
 // Get reads one saved shipment without scanning the collection or contacting a carrier.
 // A missing record returns an error wrapping os.ErrNotExist.
-func (s *Store) Get(ctx context.Context, number string) (*Shipment, error) {
+func (s *Service) Get(ctx context.Context, number string) (*Shipment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -77,7 +81,7 @@ func (s *Store) Get(ctx context.Context, number string) (*Shipment, error) {
 
 // List reads matching records offline in tracking-number order. A zero Filter
 // selects active shipments and deliveries dated today; All includes every record.
-func (s *Store) List(ctx context.Context, filter Filter) ([]Shipment, error) {
+func (s *Service) List(ctx context.Context, filter Filter) ([]Shipment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -109,7 +113,7 @@ func (s *Store) List(ctx context.Context, filter Filter) ([]Shipment, error) {
 // Update replaces an existing record, preserving its original AddedAt.
 // Read with Get, modify the attribution or snapshot, then pass the record here.
 // Updating a missing record never intentionally creates it; concurrent writes are last-writer-wins.
-func (s *Store) Update(ctx context.Context, shipment Shipment) error {
+func (s *Service) Update(ctx context.Context, shipment Shipment) error {
 	current, err := s.Get(ctx, shipment.TrackingNumber)
 	if err != nil {
 		return err
@@ -131,7 +135,7 @@ func (s *Store) Update(ctx context.Context, shipment Shipment) error {
 }
 
 // Remove deletes a local record, not the carrier shipment. Missing records are ignored.
-func (s *Store) Remove(ctx context.Context, number string) error {
+func (s *Service) Remove(ctx context.Context, number string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -158,4 +162,29 @@ func encodeShipment(shipment Shipment) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// Track retrieves a snapshot without saving or changing local shipment state.
+func (s *Service) Track(ctx context.Context, number string) (*Snapshot, error) {
+	if s.tracker == nil {
+		return nil, fmt.Errorf("tracking client is required")
+	}
+	number, err := NormalizeNumber(number)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	snapshot, err := s.tracker.Track(ctx, number)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := validateSnapshot(snapshot, number); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }

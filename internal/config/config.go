@@ -28,7 +28,7 @@ type Config struct {
 type Defaults struct {
 	Store   string         `json:"store,omitempty"`
 	Timeout string         `json:"timeout,omitempty"`
-	Output OutputDefaults `json:"output"`
+	Output  OutputDefaults `json:"output"`
 }
 
 // OutputDefaults controls JSON formatting behavior.

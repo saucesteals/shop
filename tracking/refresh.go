@@ -25,22 +25,19 @@ type Result struct {
 // Refresh fetches and saves one existing shipment, regardless of delivery age.
 // On lookup or save failure it returns the previous saved record with the error.
 // No record is written on lookup failure. Caller controls cancellation and timeout.
-func (s *Store) Refresh(ctx context.Context, tracker Tracker, number string) (*Shipment, error) {
+func (s *Service) Refresh(ctx context.Context, number string) (*Shipment, error) {
 	shipment, err := s.Get(ctx, number)
 	if err != nil {
 		return nil, err
 	}
-	if tracker == nil {
+	if s.tracker == nil {
 		return shipment, fmt.Errorf("tracking client is required")
 	}
-	snapshot, err := tracker.Track(ctx, shipment.TrackingNumber)
+	snapshot, err := s.Track(ctx, shipment.TrackingNumber)
 	if ctx.Err() != nil {
 		return shipment, ctx.Err()
 	}
 	if err != nil {
-		return shipment, err
-	}
-	if err := validateSnapshot(snapshot, shipment.TrackingNumber); err != nil {
 		return shipment, err
 	}
 	// Re-read after the network request so an intervening removal or metadata
@@ -62,8 +59,8 @@ func (s *Store) Refresh(ctx context.Context, tracker Tracker, number string) (*S
 // Per-shipment errors remain in results and do not abort the batch. A top-level
 // error means invalid options, a listing failure, or caller cancellation. On
 // cancellation, results for attempted shipments are returned alongside the error.
-func (s *Store) RefreshAll(ctx context.Context, tracker Tracker, options RefreshOptions) ([]Result, error) {
-	if tracker == nil {
+func (s *Service) RefreshAll(ctx context.Context, options RefreshOptions) ([]Result, error) {
+	if s.tracker == nil {
 		return nil, fmt.Errorf("tracking client is required")
 	}
 	if options.Timeout < 0 {
@@ -83,7 +80,7 @@ func (s *Store) RefreshAll(ctx context.Context, tracker Tracker, options Refresh
 		if options.Timeout > 0 {
 			lookupCtx, cancel = context.WithTimeout(ctx, options.Timeout)
 		}
-		updated, err := s.Refresh(lookupCtx, tracker, shipment.TrackingNumber)
+		updated, err := s.Refresh(lookupCtx, shipment.TrackingNumber)
 		cancel()
 		if updated != nil {
 			shipment = *updated
