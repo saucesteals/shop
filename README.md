@@ -349,9 +349,10 @@ shop track remove <tracking-number>
 - `remove` deletes only the local entry; removing an absent number is harmless.
 - Lookups do not automatically save packages. Labels, merchant names, order IDs, and notes stay local.
 
-Tracking supports USPS, standard UPS, and 12- or 15-digit FedEx numbers. Unsupported formats return `not_supported`; lookups do not fall back to another source.
+Tracking supports USPS, standard UPS, 12- or 15-digit FedEx numbers, and GOFO US waybills (`GFUS` followed by 14 digits). Unsupported formats return `not_supported`; lookups do not fall back to another source.
 
 - USPS tracking is provided by Stamps.
+- GOFO US uses its public tracking service without an account.
 - UPS uses its carrier tracking service.
 - FedEx uses its carrier API and depends on Deliveries for short-lived access tokens. Tokens are not stored.
 

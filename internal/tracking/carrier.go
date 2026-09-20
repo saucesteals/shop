@@ -14,6 +14,8 @@ const (
 	USPS Carrier = "usps"
 	// FedEx identifies standard express and ground package numbers.
 	FedEx Carrier = "fedex"
+	// GOFO identifies supported GOFO US waybill numbers.
+	GOFO Carrier = "gofo"
 )
 
 // DetectCarrier recognizes supported number formats, not shipment validity.
@@ -22,6 +24,9 @@ func DetectCarrier(number string) Carrier {
 	number = strings.ToUpper(strings.TrimSpace(number))
 	if len(number) == 18 && strings.HasPrefix(number, "1Z") && asciiIdentifier(number[2:], true) {
 		return UPS
+	}
+	if len(number) == 18 && strings.HasPrefix(number, "GFUS") && asciiIdentifier(number[4:], false) {
+		return GOFO
 	}
 	if len(number) == 22 && strings.HasPrefix(number, "9") && asciiIdentifier(number, false) {
 		return USPS
