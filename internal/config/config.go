@@ -89,26 +89,6 @@ func Save(dir string, cfg *Config) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-// EnsureDefaults writes default config and registry files if they don't
-// already exist on disk. Called on first run.
-func EnsureDefaults(dir string, cfg *Config, reg *Registry) error {
-	configPath := filepath.Join(dir, configFile)
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		if err := Save(dir, cfg); err != nil {
-			return fmt.Errorf("write default config: %w", err)
-		}
-	}
-
-	registryPath := filepath.Join(dir, registryFile)
-	if _, err := os.Stat(registryPath); os.IsNotExist(err) {
-		if err := SaveRegistry(dir, reg); err != nil {
-			return fmt.Errorf("write default registry: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func defaultConfig() *Config {
 	return &Config{
 		Version: 1,

@@ -3,8 +3,6 @@ package tracking
 
 import (
 	"time"
-
-	"github.com/saucesteals/shop/internal/fault"
 )
 
 // Shipment is a saved package: local attribution and its last successful lookup.
@@ -56,7 +54,7 @@ func (s *Snapshot) Latest() *Event {
 
 func validateSnapshot(snapshot *Snapshot, number string) error {
 	if snapshot == nil || len(snapshot.Events) == 0 || snapshot.TrackingNumber != number {
-		return fault.Errorf(fault.ErrUpstream, "tracking source returned an invalid snapshot")
+		return &Error{Kind: ErrUpstream, Message: "tracking source returned an invalid snapshot"}
 	}
 
 	return nil

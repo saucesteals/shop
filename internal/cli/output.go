@@ -45,10 +45,9 @@ func (c *CLI) outputJSON(v any) error {
 func outputError(err error) int {
 	var shopErr *shop.Error
 	if !errors.As(err, &shopErr) {
-		// Unknown errors are internal — not necessarily invalid input.
-		shopErr = &shop.Error{
-			Code:    shop.ErrInternal,
-			Message: err.Error(),
+		shopErr = trackingError(err)
+		if shopErr == nil {
+			shopErr = shop.Errorf(shop.ErrInternal, "%s", err)
 		}
 	}
 

@@ -120,6 +120,11 @@ func (s *Service) Update(ctx context.Context, shipment Shipment) error {
 	}
 	shipment.TrackingNumber = current.TrackingNumber
 	shipment.AddedAt = current.AddedAt
+
+	return s.save(ctx, shipment)
+}
+
+func (s *Service) save(ctx context.Context, shipment Shipment) error {
 	data, err := encodeShipment(shipment)
 	if err != nil {
 		return err
@@ -128,7 +133,7 @@ func (s *Service) Update(ctx context.Context, shipment Shipment) error {
 		return err
 	}
 	if err := config.SaveState(s.configDir, "", "shipments", shipment.TrackingNumber, data); err != nil {
-		return fmt.Errorf("update shipment: %w", err)
+		return fmt.Errorf("save shipment: %w", err)
 	}
 
 	return nil

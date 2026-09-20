@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/saucesteals/shop/internal/fault"
 	"github.com/saucesteals/shop/tracking"
 )
 
@@ -56,7 +55,7 @@ func (c *Client) Track(ctx context.Context, input string) (*tracking.Snapshot, e
 		return nil, err
 	}
 	if tracking.DetectCarrier(number) != tracking.FedEx {
-		return nil, fault.Errorf(fault.ErrInvalidInput, "unsupported FedEx tracking format")
+		return nil, &tracking.Error{Kind: tracking.ErrInvalidInput, Message: "unsupported FedEx tracking format"}
 	}
 	token, err := c.session(ctx)
 	if err != nil {
@@ -68,11 +67,11 @@ func (c *Client) Track(ctx context.Context, input string) (*tracking.Snapshot, e
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fault.Errorf(fault.ErrInternal, "encode tracking request")
+		return nil, &tracking.Error{Kind: tracking.ErrInternal, Message: "encode tracking request"}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fedexTrackingURL, bytes.NewReader(encoded))
 	if err != nil {
-		return nil, fault.Errorf(fault.ErrInternal, "create tracking request")
+		return nil, &tracking.Error{Kind: tracking.ErrInternal, Message: "create tracking request"}
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
@@ -102,7 +101,7 @@ func (c *Client) Track(ctx context.Context, input string) (*tracking.Snapshot, e
 func (c *Client) session(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fedexSessionURL, nil)
 	if err != nil {
-		return "", fault.Errorf(fault.ErrInternal, "create tracking session request")
+		return "", &tracking.Error{Kind: tracking.ErrInternal, Message: "create tracking session request"}
 	}
 	req.Header.Set("User-Agent", fedexClientVersion)
 	req.Header.Set("Accept", "application/json")
@@ -268,19 +267,19 @@ func parseFedEx(body []byte, number string) ([]tracking.Event, string, error) {
 func (c *Client) do(req *http.Request) ([]byte, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fault.Errorf(fault.ErrNetwork, "carrier tracking request failed")
+		return nil, &tracking.Error{Kind: tracking.ErrNetwork, Message: "carrier tracking request failed"}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fault.Errorf(fault.ErrRateLimited, "tracking source rate limited").WithDetails(map[string]any{"retryAfter": resp.Header.Get("Retry-After")})
+		return nil, &tracking.Error{Kind: tracking.ErrRateLimited, RetryAfter: resp.Header.Get("Retry-After")}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
+		return nil, &tracking.Error{Kind: tracking.ErrUpstream, Reason: "http_error", StatusCode: resp.StatusCode}
 	}
 	const maxBody = 2 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return nil, fault.Errorf(fault.ErrNetwork, "read tracking response")
+		return nil, &tracking.Error{Kind: tracking.ErrNetwork, Message: "read tracking response"}
 	}
 	if len(body) > maxBody {
 		return nil, upstreamError("response_too_large")
@@ -290,6 +289,6 @@ func (c *Client) do(req *http.Request) ([]byte, error) {
 }
 
 // upstreamError identifies an unusable tracking response without leaking its contents.
-func upstreamError(reason string) *fault.Error {
-	return fault.Errorf(fault.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
+func upstreamError(reason string) *tracking.Error {
+	return &tracking.Error{Kind: tracking.ErrUpstream, Reason: reason}
 }

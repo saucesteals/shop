@@ -1,7 +1,5 @@
 package shop
 
-import "github.com/saucesteals/shop/internal/config"
-
 // Address is a shipping/billing address.
 type Address struct {
 	ID         string `json:"id"`
@@ -72,6 +70,3 @@ type StoreInfo struct {
 	Currency string `json:"currency,omitempty"`
 	LogoURL  string `json:"logoUrl,omitempty"`
 }
-
-// RegistryEntry is a known store in the persistent registry.
-type RegistryEntry = config.RegistryEntry

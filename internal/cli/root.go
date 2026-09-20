@@ -19,7 +19,8 @@ var Version = "dev"
 
 // CLI holds shared state across all commands.
 type CLI struct {
-	app *shop.Client
+	client *shop.Client
+	config *config.Config
 
 	// Global flags.
 	store      string
@@ -49,33 +50,39 @@ func New() *cobra.Command {
 			if dir == "" {
 				dir = config.DefaultDir()
 			}
-
-			options := shop.Options{ConfigDir: dir}
-			if cmd.Flags().Changed("timeout") {
-				options.HTTPClient = &http.Client{Timeout: c.timeout}
+			cfg, err := config.Load(dir)
+			if err != nil {
+				return shop.Errorf(shop.ErrConfigError, "load config: %v", err)
 			}
-			a, err := shop.New(options)
+			c.config = cfg
+			c.configPath = dir
+			if !cmd.Flags().Changed("json") {
+				c.jsonOutput = cfg.Defaults.Output.JSON
+			}
+			if !cmd.Flags().Changed("pretty") {
+				c.pretty = cfg.Defaults.Output.Pretty
+			}
+
+			// Config commands must remain usable to repair a bad timeout setting.
+			if cmd.Parent() != nil && cmd.Parent().Name() == "config" {
+				return nil
+			}
+			if !cmd.Flags().Changed("timeout") && cfg.Defaults.Timeout != "" {
+				c.timeout, err = time.ParseDuration(cfg.Defaults.Timeout)
+				if err != nil || c.timeout < 0 {
+					return shop.Errorf(shop.ErrConfigError, "invalid configured timeout")
+				}
+			}
+			if c.timeout < 0 {
+				return shop.Errorf(shop.ErrInvalidInput, "timeout must not be negative")
+			}
+			c.client, err = shop.New(shop.Options{
+				ConfigDir: dir,
+				// Context deadlines are applied by the CLI, once per operation.
+				HTTPClient: &http.Client{},
+			})
 			if err != nil {
 				return err
-			}
-
-			c.app = a
-
-			// Wire config output settings into CLI flags when not
-			// explicitly overridden by command-line flags.
-			if !cmd.Flags().Changed("json") && a.Config.Defaults.Output.JSON {
-				c.jsonOutput = true
-			}
-			if !cmd.Flags().Changed("pretty") && a.Config.Defaults.Output.Pretty {
-				c.pretty = true
-			}
-
-			// Wire config timeout into CLI flag when not explicitly
-			// overridden by command-line flags.
-			if !cmd.Flags().Changed("timeout") && a.Config.Defaults.Timeout != "" {
-				if d, err := time.ParseDuration(a.Config.Defaults.Timeout); err == nil {
-					c.timeout = d
-				}
 			}
 
 			return nil
@@ -133,16 +140,15 @@ func run() error {
 }
 
 // resolveStore validates the --store flag, creates a timeout context, and
-// resolves the store in one call. Replaces the repeated requireStore +
-// timeoutCtx + Resolve pattern. The caller must defer cancel().
+// resolves the store in one call. The caller must defer cancel().
 //
 // Resolution order: explicit flag > env var > config default.
 func (c *CLI) resolveStore(cmd *cobra.Command) (context.Context, context.CancelFunc, shop.Store, error) {
 	if c.store == "" {
 		c.store = os.Getenv("SHOP_STORE")
 	}
-	if c.store == "" && c.app != nil && c.app.Config.Defaults.Store != "" {
-		c.store = c.app.Config.Defaults.Store
+	if c.store == "" && c.config != nil && c.config.Defaults.Store != "" {
+		c.store = c.config.Defaults.Store
 	}
 	if c.store == "" {
 		return nil, nil, nil, shop.Errorf(shop.ErrInvalidInput,
@@ -151,7 +157,7 @@ func (c *CLI) resolveStore(cmd *cobra.Command) (context.Context, context.CancelF
 
 	ctx, cancel := c.timeoutCtx(cmd)
 
-	s, err := c.app.Store(ctx, c.store)
+	s, err := c.client.Store(ctx, c.store)
 	if err != nil {
 		cancel()
 
@@ -163,18 +169,26 @@ func (c *CLI) resolveStore(cmd *cobra.Command) (context.Context, context.CancelF
 
 // timeoutCtx wraps the command's context with the --timeout duration.
 func (c *CLI) timeoutCtx(cmd *cobra.Command) (context.Context, context.CancelFunc) {
+	if c.timeout == 0 {
+		return context.WithCancel(cmd.Context())
+	}
+
 	return context.WithTimeout(cmd.Context(), c.timeout)
 }
 
 // completeStoreNames provides tab completion for the --store flag using
 // the store names from the registry.
 func (c *CLI) completeStoreNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	if c.app == nil || c.app.Registry == nil {
+	dir := c.configPath
+	if dir == "" {
+		dir = config.DefaultDir()
+	}
+	registry, err := config.LoadRegistry(dir)
+	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-
-	names := make([]string, len(c.app.Registry.Stores))
-	for i, entry := range c.app.Registry.Stores {
+	names := make([]string, len(registry.Stores))
+	for i, entry := range registry.Stores {
 		names[i] = entry.Alias
 	}
 

@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -51,20 +53,35 @@ func (c *CLI) newConfigSetCmd() *cobra.Command {
 				return shop.Errorf(shop.ErrInvalidInput, "unknown config key %q (see: shop config list)", key)
 			}
 
-			cfg := c.app.Config
+			cfg := c.config
 
 			switch key {
 			case "defaults.store":
 				cfg.Defaults.Store = value
 			case "defaults.timeout":
+				timeout, err := time.ParseDuration(value)
+				if err != nil {
+					return shop.Errorf(shop.ErrInvalidInput, "timeout must be a duration")
+				}
+				if timeout < 0 {
+					return shop.Errorf(shop.ErrInvalidInput, "timeout must not be negative")
+				}
 				cfg.Defaults.Timeout = value
 			case "defaults.output.json":
-				cfg.Defaults.Output.JSON = value == "true"
+				v, err := strconv.ParseBool(value)
+				if err != nil {
+					return shop.Errorf(shop.ErrInvalidInput, "output.json must be a boolean")
+				}
+				cfg.Defaults.Output.JSON = v
 			case "defaults.output.pretty":
-				cfg.Defaults.Output.Pretty = value == "true"
+				v, err := strconv.ParseBool(value)
+				if err != nil {
+					return shop.Errorf(shop.ErrInvalidInput, "output.pretty must be a boolean")
+				}
+				cfg.Defaults.Output.Pretty = v
 			}
 
-			if err := config.Save(c.app.ConfigDir(), cfg); err != nil {
+			if err := config.Save(c.configPath, cfg); err != nil {
 				return shop.Errorf(shop.ErrConfigError, "save config: %v", err)
 			}
 
@@ -85,7 +102,7 @@ func (c *CLI) newConfigGetCmd() *cobra.Command {
 				return shop.Errorf(shop.ErrInvalidInput, "unknown config key %q (see: shop config list)", key)
 			}
 
-			cfg := c.app.Config
+			cfg := c.config
 			var value string
 
 			switch key {
@@ -114,7 +131,7 @@ func (c *CLI) newConfigListCmd() *cobra.Command {
 		Short: "List all configuration values",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg := c.app.Config
+			cfg := c.config
 
 			// Build a flat key-value map of current config state.
 			values := map[string]string{

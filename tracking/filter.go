@@ -3,8 +3,6 @@ package tracking
 import (
 	"strings"
 	"time"
-
-	"github.com/saucesteals/shop/internal/fault"
 )
 
 // Filter controls which saved shipments are displayed or refreshed.
@@ -18,7 +16,7 @@ type Filter struct {
 // Validate rejects conflicting filters.
 func (s Filter) Validate() error {
 	if s.All && !s.DeliveredSince.IsZero() {
-		return fault.Errorf(fault.ErrInvalidInput, "all and delivered-since filters cannot be combined")
+		return &Error{Kind: ErrInvalidInput, Message: "all and delivered-since filters cannot be combined"}
 	}
 
 	return nil

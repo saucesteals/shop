@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,168 +17,124 @@ import (
 	"github.com/saucesteals/shop/tracking/yanwen"
 )
 
-// Client owns configuration, store resolution, and shipment tracking.
-// Configure it before use. Tracking supports concurrent calls; store discovery
-// and edits to Config or Registry require caller synchronization.
-type Client struct {
-	Config    *Config
-	Registry  *Registry
-	configDir string
-	tracking  *tracking.Service
+// Options configures a Shop client. An empty ConfigDir uses ~/.config/shop.
+type Options struct {
+	ConfigDir string
+	// HTTPClient overrides the tracking transport and timeout. It is not mutated.
+	// Shopping providers manage their own transports.
+	HTTPClient *http.Client
 }
 
-// New creates a Client by loading config and registry from the given directory.
-// On first run, it creates the directory and writes default files.
+// Client shares a configuration directory between shopping and shipment tracking.
+// Its configuration is fixed at construction; creating it does not write files.
+type Client struct {
+	configDir    string
+	defaultStore string
+	tracking     *tracking.Service
+}
+
+// New reads saved defaults and wires the built-in tracking clients. A nil
+// HTTPClient uses defaults.timeout, or 30 seconds if no timeout is configured.
 func New(options Options) (*Client, error) {
-	configDir := strings.TrimSpace(options.ConfigDir)
-	if configDir == "" {
-		configDir = config.DefaultDir()
+	dir := strings.TrimSpace(options.ConfigDir)
+	if dir == "" {
+		dir = config.DefaultDir()
 	}
-	configDir, err := filepath.Abs(configDir)
+	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve config directory: %w", err)
 	}
-
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		return nil, Errorf(ErrConfigError, "create config directory: %v", err)
-	}
-
-	cfg, err := config.Load(configDir)
+	cfg, err := config.Load(dir)
 	if err != nil {
 		return nil, Errorf(ErrConfigError, "load config: %v", err)
 	}
-
-	reg, err := config.LoadRegistry(configDir)
-	if err != nil {
-		return nil, Errorf(ErrConfigError, "load registry: %v", err)
-	}
-
-	// First-run: write default files if they don't exist.
-	if err := config.EnsureDefaults(configDir, cfg, reg); err != nil {
-		return nil, Errorf(ErrConfigError, "write default config: %v", err)
-	}
-
-	tracker := options.Tracker
-	if tracker == nil {
-		httpClient := options.HTTPClient
-		if httpClient == nil {
-			timeout := 30 * time.Second
-			if cfg.Defaults.Timeout != "" {
-				configured, err := time.ParseDuration(cfg.Defaults.Timeout)
-				if err != nil || configured < 0 {
-					return nil, Errorf(ErrConfigError, "invalid configured timeout")
-				}
-				timeout = configured
+	client := options.HTTPClient
+	if client == nil {
+		timeout := 30 * time.Second
+		if cfg.Defaults.Timeout != "" {
+			timeout, err = time.ParseDuration(cfg.Defaults.Timeout)
+			if err != nil || timeout < 0 {
+				return nil, Errorf(ErrConfigError, "invalid configured timeout")
 			}
-			httpClient = &http.Client{Timeout: timeout}
 		}
-		registry, err := tracking.NewRegistry(
-			ups.New(httpClient),
-			stamps.New(httpClient),
-			fedex.New(httpClient),
-			gofo.New(httpClient),
-			yanwen.New(httpClient),
-		)
-		if err != nil {
-			return nil, err
-		}
-		tracker = registry
+		client = &http.Client{Timeout: timeout}
+	}
+	registry, err := tracking.NewRegistry(
+		ups.New(client),
+		stamps.New(client),
+		fedex.New(client),
+		gofo.New(client),
+		yanwen.New(client),
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Client{
-		Config:    cfg,
-		Registry:  reg,
-		configDir: configDir,
-		tracking:  tracking.New(configDir, tracker),
+		configDir:    dir,
+		defaultStore: cfg.Defaults.Store,
+		tracking:     tracking.New(dir, registry),
 	}, nil
 }
 
-// Store takes a store handle and returns a ready Store instance.
-// Resolution chain:
-//  1. Exact match in registry (alias or domain)
-//  2. Domain normalization + registry lookup
-//  3. Auto-discovery via provider Detect() in cost order
-//  4. Fail with ErrStoreNotFound
-func (a *Client) Store(ctx context.Context, storeValue string) (Store, error) {
+// ConfigDir returns the absolute directory shared by authentication and state.
+func (c *Client) ConfigDir() string { return c.configDir }
+
+// Tracking returns the reusable shipment service. No shopping login is required.
+func (c *Client) Tracking() *tracking.Service { return c.tracking }
+
+// Store resolves a saved alias or domain through registered shopping providers.
+// An empty handle uses defaults.store. Discovery is cached in registry.json;
+// tracking does not load or depend on this shopping registry.
+func (c *Client) Store(ctx context.Context, handle string) (Store, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	storeValue = strings.TrimSpace(storeValue)
-	if storeValue == "" {
-		storeValue = a.Config.Defaults.Store
+	handle = strings.TrimSpace(handle)
+	if handle == "" {
+		handle = c.defaultStore
 	}
-	if storeValue == "" {
+	if handle == "" {
 		return nil, Errorf(ErrInvalidInput, "store handle is required when no default store is configured")
 	}
-
-	// Step 1+2: Registry lookup (handles both exact alias and normalized domain).
-	if entry := a.Registry.Lookup(storeValue); entry != nil {
-		return a.storeFromEntry(ctx, entry)
+	registry, err := config.LoadRegistry(c.configDir)
+	if err != nil {
+		return nil, Errorf(ErrConfigError, "load registry: %v", err)
 	}
-
-	// Step 3: Auto-discovery.
-	for _, p := range Providers() {
-		info, err := p.Detect(ctx, storeValue)
+	providers := Providers()
+	if entry := registry.Lookup(handle); entry != nil {
+		for _, provider := range providers {
+			if provider.Name() == entry.Provider {
+				return provider.Store(ctx, entry.Domain, c.configDir)
+			}
+		}
+		return nil, Errorf(ErrStoreNotFound, "provider %q not registered for store %q", entry.Provider, entry.Alias).
+			WithDetails(map[string]any{"store": entry.Alias, "provider": entry.Provider})
+	}
+	for _, provider := range providers {
+		info, err := provider.Detect(ctx, handle)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil || info == nil {
 			continue
 		}
-
-		// Cache discovery in registry.
-		entry := RegistryEntry{
-			Alias:      storeValue,
+		registry.Add(config.RegistryEntry{
+			Alias:      handle,
 			Domain:     info.Domain,
-			Provider:   p.Name(),
+			Provider:   provider.Name(),
 			Name:       info.Name,
 			Country:    info.Country,
 			Currency:   info.Currency,
 			DetectedAt: time.Now().UTC().Format(time.RFC3339),
-			DetectedBy: p.Name(),
+			DetectedBy: provider.Name(),
+		})
+		if err := config.SaveRegistry(c.configDir, registry); err != nil {
+			return nil, Errorf(ErrConfigError, "cache discovered store: %v", err)
 		}
-		a.Registry.Add(entry)
-
-		if err := config.SaveRegistry(a.configDir, a.Registry); err != nil {
-			return nil, fmt.Errorf("cache discovered store: %w", err)
-		}
-
-		return p.Store(ctx, info.Domain, a.configDir)
+		return provider.Store(ctx, info.Domain, c.configDir)
 	}
 
-	// Step 4: Not found.
-	return nil, Errorf(ErrStoreNotFound, "store %q not found; no provider could handle this domain", storeValue).
-		WithDetails(map[string]any{"store": storeValue})
+	return nil, Errorf(ErrStoreNotFound, "store %q not found; no provider could handle this domain", handle).
+		WithDetails(map[string]any{"store": handle})
 }
-
-// storeFromEntry finds the registered provider for an entry and creates a Store.
-func (a *Client) storeFromEntry(ctx context.Context, entry *RegistryEntry) (Store, error) {
-	for _, p := range Providers() {
-		if p.Name() == entry.Provider {
-			return p.Store(ctx, entry.Domain, a.configDir)
-		}
-	}
-
-	return nil, Errorf(ErrStoreNotFound, "provider %q not registered for store %q", entry.Provider, entry.Alias).
-		WithDetails(map[string]any{"store": entry.Alias, "provider": entry.Provider})
-}
-
-// Options configures a Client. Zero values use the standard Shop directory and
-// built-in tracking clients. A supplied HTTPClient is reused without mutation;
-// it overrides defaults.timeout for tracking. Shopping providers own their transports.
-type Options struct {
-	ConfigDir  string
-	HTTPClient *http.Client
-	// Tracker optionally replaces the built-in carrier registry.
-	Tracker tracking.Tracker
-}
-
-// Tracking returns this client's reusable shipment service. It shares ConfigDir
-// with shopping authentication and state, and requires no store login.
-func (a *Client) Tracking() *tracking.Service { return a.tracking }
-
-// Config holds persisted defaults and shopping-provider settings.
-type Config = config.Config
-
-// Registry holds the persisted shopping-store directory.
-type Registry = config.Registry
-
-// ConfigDir returns the absolute directory shared by all client services.
-func (a *Client) ConfigDir() string { return a.configDir }

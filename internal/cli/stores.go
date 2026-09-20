@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/saucesteals/shop"
+	"github.com/saucesteals/shop/internal/config"
 )
 
 // storeInfoOutput combines store metadata with capabilities for the
@@ -21,13 +22,17 @@ func (c *CLI) newStoresCmd() *cobra.Command {
 		Short: "List known stores in the registry",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			registry, err := config.LoadRegistry(c.configPath)
+			if err != nil {
+				return shop.Errorf(shop.ErrConfigError, "load registry: %v", err)
+			}
 			if provider != "" {
-				entries := c.app.Registry.FilterByProvider(provider)
+				entries := registry.FilterByProvider(provider)
 
 				return c.outputJSON(entries)
 			}
 
-			return c.outputJSON(c.app.Registry.Stores)
+			return c.outputJSON(registry.Stores)
 		},
 	}
 

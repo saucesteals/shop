@@ -3,8 +3,6 @@ package tracking
 import (
 	"context"
 	"fmt"
-
-	"github.com/saucesteals/shop/internal/fault"
 )
 
 // Tracker retrieves a shipment's available history.
@@ -64,7 +62,7 @@ func (r *Registry) Track(ctx context.Context, number string) (*Snapshot, error) 
 	}
 	provider, ok := r.handlers[DetectCarrier(number)]
 	if !ok {
-		return nil, fault.Errorf(fault.ErrNotSupported, "tracking carrier is not supported")
+		return nil, &Error{Kind: ErrNotSupported, Message: "tracking carrier is not supported"}
 	}
 
 	if err := ctx.Err(); err != nil {

@@ -538,8 +538,10 @@ import _ "github.com/saucesteals/shop/provider/amazon"
 
 Create one configured client for shopping and tracking. An empty `ConfigDir` uses
 `~/.config/shop`; an explicit directory isolates configuration, authentication,
-and saved shipments. `New` loads `config.json` and `registry.json`, creating their
-defaults on first use. Shopping providers still register through direct imports.
+and saved shipments. `New` reads defaults from `config.json` without creating
+files. Shopping aliases
+are loaded only when opening a store; tracking does not depend on `registry.json`.
+Shopping providers still register through direct imports.
 
 ```go
 import (
@@ -597,11 +599,18 @@ Contexts control operation deadlines, and `RefreshOptions.Timeout` gives each
 shipment an independent allowance. The earliest applicable deadline wins.
 Shopping providers continue to manage their own HTTP transports.
 
-For custom routing, pass `Options.Tracker` with a `tracking.NewRegistry(...)` or
+For standalone tracking or custom routing, use
+`tracking.New(configDir, trackingClient)` with a `tracking.NewRegistry(...)` or
 another `tracking.Tracker`. Direct clients remain available in `tracking/ups`,
 `tracking/stamps`, `tracking/fedex`, `tracking/gofo`, and `tracking/yanwen`, each
-with `New(*http.Client)`. `tracking.New(configDir, tracker)` is available for
-applications that need only shipment services, without loading Shop's config.
+with `New(*http.Client)`. The configured Shop client uses the built-in registry;
+no registration is
+required for normal tracking use.
+
+Tracking failures support `errors.Is(err, tracking.ErrRateLimited)` and the other
+tracking categories. Use `errors.As` with `*tracking.Error` for HTTP status, retry
+hints, and carrier diagnostics. Storage failures retain `os.ErrExist` and
+`os.ErrNotExist`; contexts retain cancellation and deadline errors.
 
 Compact JSON summaries belong to the CLI, not library results. Change-only
 notifications should compare scans and ETA, not `FetchedAt`. Compare against
@@ -620,7 +629,7 @@ That's it. No config files, no factory registration, no dependency injection. Th
 
 Tracking providers are separate from shopping stores. Each implements `tracking.Provider`: `Track` retrieves a snapshot and `Carriers` declares the typed carrier IDs it handles. `tracking.NewRegistry` builds the routing map and rejects duplicate handlers or undeclared carrier IDs.
 
-`shop.New` wires built-in clients once; applications can supply their own tracker. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
+`shop.New` wires built-in clients once. Standalone tracking services can use a custom registry. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
 
 To add a tracking provider, implement the interface and include it in the application's registry. A new carrier also needs a declared ID and a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
 

@@ -28,10 +28,10 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client := c.app.Tracking()
+			client := c.client.Tracking()
 			result, err := client.Track(ctx, args[0])
 			if err != nil {
-				return err
+				return shipmentError(err, shop.ErrNetwork)
 			}
 
 			return c.outputJSON(result)
@@ -50,7 +50,7 @@ func (c *CLI) newTrackAddCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entry.TrackingNumber = args[0]
-			saved, err := c.app.Tracking().Add(cmd.Context(), entry)
+			saved, err := c.client.Tracking().Add(cmd.Context(), entry)
 			if err != nil {
 				return shipmentError(err, shop.ErrConfigError)
 			}
@@ -100,7 +100,7 @@ func (c *CLI) newTrackListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entries, err := c.app.Tracking().List(cmd.Context(), filter)
+			entries, err := c.client.Tracking().List(cmd.Context(), filter)
 			if err != nil {
 				return shipmentError(err, shop.ErrConfigError)
 			}
@@ -119,7 +119,7 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 		Short: "Remove local shipment attribution",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := c.app.Tracking().Remove(cmd.Context(), args[0]); err != nil {
+			if err := c.client.Tracking().Remove(cmd.Context(), args[0]); err != nil {
 				return shipmentError(err, shop.ErrConfigError)
 			}
 
@@ -143,7 +143,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			}
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			store := c.app.Tracking()
+			store := c.client.Tracking()
 			var results []tracking.Result
 			var refreshErr error
 			if len(args) > 0 {

@@ -7,7 +7,7 @@ import (
 )
 
 // RefreshOptions controls a saved-shipment batch. Zero values select active
-// shipments and use only the caller's deadline. Timeout bounds each lookup
+// shipments without an additional deadline. Timeout bounds each lookup
 // independently; a failure does not consume the next shipment's allowance.
 type RefreshOptions struct {
 	Filter  Filter
@@ -30,13 +30,7 @@ func (s *Service) Refresh(ctx context.Context, number string) (*Shipment, error)
 	if err != nil {
 		return nil, err
 	}
-	if s.tracker == nil {
-		return shipment, fmt.Errorf("tracking client is required")
-	}
 	snapshot, err := s.Track(ctx, shipment.TrackingNumber)
-	if ctx.Err() != nil {
-		return shipment, ctx.Err()
-	}
 	if err != nil {
 		return shipment, err
 	}
@@ -48,7 +42,7 @@ func (s *Service) Refresh(ctx context.Context, number string) (*Shipment, error)
 	}
 	previous := *current
 	current.Tracking = snapshot
-	if err := s.Update(ctx, *current); err != nil {
+	if err := s.save(ctx, *current); err != nil {
 		return &previous, err
 	}
 

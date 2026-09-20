@@ -61,6 +61,9 @@ func summarizeRefresh(results []tracking.Result) refreshSummary {
 }
 
 func shipmentError(err error, fallback shop.ErrorCode) *shop.Error {
+	if structured := trackingError(err); structured != nil {
+		return structured
+	}
 	var structured *shop.Error
 	if errors.As(err, &structured) {
 		return structured
@@ -76,4 +79,42 @@ func shipmentError(err error, fallback shop.ErrorCode) *shop.Error {
 	}
 
 	return shop.Errorf(fallback, "shipment operation failed: %v", err)
+}
+
+func trackingError(err error) *shop.Error {
+	var code shop.ErrorCode
+	switch {
+	case errors.Is(err, tracking.ErrInvalidInput):
+		code = shop.ErrInvalidInput
+	case errors.Is(err, tracking.ErrNotSupported):
+		code = shop.ErrNotSupported
+	case errors.Is(err, tracking.ErrRateLimited):
+		code = shop.ErrRateLimited
+	case errors.Is(err, tracking.ErrNetwork):
+		code = shop.ErrNetwork
+	case errors.Is(err, tracking.ErrUpstream):
+		code = shop.ErrUpstream
+	case errors.Is(err, tracking.ErrInternal):
+		code = shop.ErrInternal
+	default:
+		return nil
+	}
+	result := shop.Errorf(code, "%s", err)
+	var failure *tracking.Error
+	if !errors.As(err, &failure) {
+		return result
+	}
+	if failure.Reason != "" || failure.StatusCode != 0 || code == shop.ErrRateLimited {
+		result.Details = make(map[string]any)
+		if failure.Reason != "" {
+			result.Details["reason"] = failure.Reason
+		}
+		if failure.StatusCode != 0 {
+			result.Details["status"] = failure.StatusCode
+		}
+		if code == shop.ErrRateLimited {
+			result.Details["retryAfter"] = failure.RetryAfter
+		}
+	}
+	return result
 }
