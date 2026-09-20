@@ -4,11 +4,13 @@ package carriers
 import (
 	"github.com/saucesteals/shop/internal/tracking"
 	"github.com/saucesteals/shop/internal/tracking/fedex"
+	"github.com/saucesteals/shop/internal/tracking/gofo"
 	"github.com/saucesteals/shop/internal/tracking/stamps"
 	"github.com/saucesteals/shop/internal/tracking/ups"
+	"github.com/saucesteals/shop/internal/tracking/yanwen"
 )
 
 // New constructs the registry from each provider's declared carriers.
 func New() (*tracking.Registry, error) {
-	return tracking.NewRegistry(&ups.Client{}, &stamps.Client{}, &fedex.Client{})
+	return tracking.NewRegistry(&ups.Client{}, &stamps.Client{}, &fedex.Client{}, &gofo.Client{}, &yanwen.Client{})
 }

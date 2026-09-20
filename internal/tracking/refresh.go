@@ -33,8 +33,12 @@ type Summary struct {
 }
 
 // Refresh updates saved snapshots, preserving previous history on lookup failure.
-// An empty number selects the whole ledger. Lookups share the caller's deadline.
-func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string) (*RefreshResult, error) {
+// An empty number applies selection to the ledger. An explicit number bypasses
+// selection. Lookups share the caller's deadline.
+func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string, selection Selection) (*RefreshResult, error) {
+	if err := selection.Validate(); err != nil {
+		return nil, err
+	}
 	if number != "" {
 		var err error
 		number, err = Number(number)
@@ -45,6 +49,9 @@ func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string) (*R
 	entries, err := l.List()
 	if err != nil {
 		return nil, err
+	}
+	if number == "" {
+		entries = selection.Select(entries, time.Now())
 	}
 	result := &RefreshResult{Shipments: make([]Summary, 0, len(entries))}
 	for _, entry := range entries {

@@ -35,7 +35,7 @@ func NewRegistry(providers ...Provider) (*Registry, error) {
 		}
 		for _, carrier := range carriers {
 			switch carrier {
-			case UPS, USPS, FedEx:
+			case UPS, USPS, FedEx, GOFO, Yanwen:
 			default:
 				return nil, fmt.Errorf("undeclared tracking carrier %q", carrier)
 			}
