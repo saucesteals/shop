@@ -13,6 +13,7 @@ import (
 type shipment struct {
 	Number string `json:"expressCode"`
 	Events []struct {
+		Category  string `json:"category"`
 		Message   string `json:"message"`
 		Timestamp int64  `json:"timestamp"`
 		TimeZone  string `json:"timeZone"`
@@ -23,17 +24,17 @@ type shipment struct {
 	} `json:"events"`
 }
 
-func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
+func parse(body []byte, number string) ([]shop.TrackingEvent, bool, error) {
 	var shipments []shipment
 	if err := json.Unmarshal(body, &shipments); err != nil {
-		return nil, tracking.UpstreamError("invalid_response")
+		return nil, false, tracking.UpstreamError("invalid_response")
 	}
 	for _, item := range shipments {
 		if !strings.EqualFold(item.Number, number) {
 			continue
 		}
 		if len(item.Events) == 0 {
-			return nil, tracking.UpstreamError("history_unavailable")
+			return nil, false, tracking.UpstreamError("history_unavailable")
 		}
 		sort.SliceStable(item.Events, func(i, j int) bool { return item.Events[i].Timestamp > item.Events[j].Timestamp })
 		events := make([]shop.TrackingEvent, 0, len(item.Events))
@@ -41,7 +42,7 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 			zone, err := time.Parse("Z07:00", raw.TimeZone)
 			description := strings.TrimSpace(raw.Message)
 			if err != nil || raw.Timestamp <= 0 || description == "" {
-				return nil, tracking.UpstreamError("invalid_response")
+				return nil, false, tracking.UpstreamError("invalid_response")
 			}
 			at := time.UnixMilli(raw.Timestamp).In(zone.Location())
 			var location []string
@@ -58,8 +59,8 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 			})
 		}
 
-		return events, nil
+		return events, item.Events[0].Category == "Transit", nil
 	}
 
-	return nil, tracking.UpstreamError("history_unavailable")
+	return nil, false, tracking.UpstreamError("history_unavailable")
 }

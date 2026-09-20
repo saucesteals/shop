@@ -17,10 +17,12 @@ type Shipment struct {
 // TrackingSnapshot is the scan history returned by one successful lookup.
 // FetchedAt is the retrieval time, not the time the carrier last updated its data.
 type TrackingSnapshot struct {
-	TrackingNumber string    `json:"trackingNumber"`
-	Source         string    `json:"source"`
-	URL            string    `json:"url"`
-	FetchedAt      time.Time `json:"fetchedAt"`
+	// ExpectedDelivery is the carrier-provided estimate, not a guarantee.
+	ExpectedDelivery string    `json:"expectedDelivery,omitempty"`
+	TrackingNumber   string    `json:"trackingNumber"`
+	Source           string    `json:"source"`
+	URL              string    `json:"url"`
+	FetchedAt        time.Time `json:"fetchedAt"`
 	// Freshness describes upstream freshness; "unknown" makes no live-data claim.
 	Freshness string `json:"freshness"`
 	// Events are ordered newest first.

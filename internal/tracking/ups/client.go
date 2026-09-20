@@ -83,18 +83,19 @@ func (c *Client) Track(ctx context.Context, number string) (*shop.TrackingSnapsh
 	if err != nil {
 		return nil, err
 	}
-	events, err := parse(body, number)
+	events, estimate, err := parse(body, number)
 	if err != nil {
 		return nil, err
 	}
 
 	return &shop.TrackingSnapshot{
-		TrackingNumber: number,
-		Source:         "ups",
-		URL:            trackingURL,
-		FetchedAt:      time.Now().UTC(),
-		Freshness:      "unknown",
-		Events:         events,
+		TrackingNumber:   number,
+		Source:           "ups",
+		URL:              trackingURL,
+		FetchedAt:        time.Now().UTC(),
+		Freshness:        "unknown",
+		Events:           events,
+		ExpectedDelivery: estimate,
 	}, nil
 }
 

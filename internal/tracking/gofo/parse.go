@@ -14,8 +14,10 @@ type response struct {
 	Code int `json:"code"`
 	Data struct {
 		Success []struct {
-			WaybillNo string `json:"waybillNo"`
-			Events    []struct {
+			WaybillNo        string `json:"waybillNo"`
+			Status           string `json:"status"`
+			EstimatedArrival string `json:"estimatedArrivalTime"`
+			Events           []struct {
 				Date     string `json:"processDate"`
 				Content  string `json:"processContent"`
 				City     string `json:"processCity"`
@@ -25,13 +27,13 @@ type response struct {
 	} `json:"data"`
 }
 
-func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
+func parse(body []byte, number string) ([]shop.TrackingEvent, string, error) {
 	var result response
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, tracking.UpstreamError("invalid_response")
+		return nil, "", tracking.UpstreamError("invalid_response")
 	}
 	if result.Code != 200 {
-		return nil, tracking.UpstreamError("history_unavailable")
+		return nil, "", tracking.UpstreamError("history_unavailable")
 	}
 	for _, shipment := range result.Data.Success {
 		if !strings.EqualFold(shipment.WaybillNo, number) {
@@ -49,7 +51,7 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 			}
 			description := strings.TrimSpace(raw.Content)
 			if err != nil || description == "" {
-				return nil, tracking.UpstreamError("invalid_response")
+				return nil, "", tracking.UpstreamError("invalid_response")
 			}
 			var location []string
 			for _, part := range []string{raw.City, raw.Province} {
@@ -68,7 +70,7 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 			})
 		}
 		if len(scans) == 0 {
-			return nil, tracking.UpstreamError("history_unavailable")
+			return nil, "", tracking.UpstreamError("history_unavailable")
 		}
 		sort.SliceStable(scans, func(i, j int) bool { return scans[i].at.After(scans[j].at) })
 		events := make([]shop.TrackingEvent, 0, len(scans))
@@ -76,8 +78,13 @@ func parse(body []byte, number string) ([]shop.TrackingEvent, error) {
 			events = append(events, scan.event)
 		}
 
-		return events, nil
+		var estimate string
+		if !strings.EqualFold(shipment.Status, "Delivered") {
+			estimate = strings.TrimSpace(shipment.EstimatedArrival)
+		}
+
+		return events, estimate, nil
 	}
 
-	return nil, tracking.UpstreamError("history_unavailable")
+	return nil, "", tracking.UpstreamError("history_unavailable")
 }

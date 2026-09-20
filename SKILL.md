@@ -160,7 +160,7 @@ shop track <tracking-number> | jq '{trackingNumber, source, latest: .events[0], 
 
 Supported formats are USPS, standard UPS, 12- or 15-digit FedEx numbers, GOFO US waybills (`GFUS` followed by 14 digits), and Yanwen Express waybills (`YWE` followed by 14 digits). On `not_supported`, explain that the number's format is unsupported; do not treat it as proof that the shipment does not exist. Provider failures are returned without switching sources.
 
-Response: `trackingNumber`, `source`, `url`, `fetchedAt`, `freshness`, and `events[]` with `date`, optional `time`, `description`, and optional `location`.
+Response: `trackingNumber`, `source`, `url`, `fetchedAt`, `freshness`, optional `expectedDelivery`, and `events[]` with `date`, optional `time`, `description`, and optional `location`.
 
 To remember what a package belongs to, save it in the local ledger:
 
@@ -190,6 +190,8 @@ Each shipment is stored as one JSON record in `state/shipments/<tracking-number>
 Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
 
 `list` and batch `refresh` default to undelivered shipments plus deliveries dated today. Use `--all` for every saved shipment or `--delivered-since YYYY-MM-DD` for an inclusive delivery-date cutoff; these flags cannot be combined. Explicit-number refreshes always run. Filtering uses the latest saved scan, not fetch time; unknown statuses/dates remain included. Dates with offsets are compared in the CLI host’s local timezone; dates without offsets retain the carrier’s calendar date. Newly discovered deliveries remain in that refresh’s output, even when dated earlier. Records are never deleted by filtering.
+
+`expectedDelivery` is optional carrier-provided display text, supported for UPS, USPS via Stamps, FedEx, GOFO, and Yanwen when published by the source. Yanwen provides a same-day window only while in transit; an unavailable optional window does not fail the scan lookup. Keep it separate from the latest scan time; do not infer an ETA when absent or present an estimate as guaranteed. Refresh summaries include it when available.
 
 The timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
 

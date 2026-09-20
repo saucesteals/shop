@@ -24,12 +24,13 @@ type RefreshResult struct {
 // Summary combines local attribution and the latest successful lookup.
 type Summary struct {
 	shop.Shipment
-	Latest    *shop.TrackingEvent `json:"latest,omitempty"`
-	FetchedAt time.Time           `json:"fetchedAt,omitzero"`
-	URL       string              `json:"url,omitempty"`
-	Freshness string              `json:"freshness"`
-	Refreshed bool                `json:"refreshed"`
-	Error     *shop.Error         `json:"error,omitempty"`
+	ExpectedDelivery string              `json:"expectedDelivery,omitempty"`
+	Latest           *shop.TrackingEvent `json:"latest,omitempty"`
+	FetchedAt        time.Time           `json:"fetchedAt,omitzero"`
+	URL              string              `json:"url,omitempty"`
+	Freshness        string              `json:"freshness"`
+	Refreshed        bool                `json:"refreshed"`
+	Error            *shop.Error         `json:"error,omitempty"`
 }
 
 // Refresh updates saved snapshots, preserving previous history on lookup failure.
@@ -102,6 +103,7 @@ func (s *Summary) apply(snapshot *shop.TrackingSnapshot) {
 		event := snapshot.Events[0]
 		s.Latest = &event
 	}
+	s.ExpectedDelivery = snapshot.ExpectedDelivery
 	s.FetchedAt = snapshot.FetchedAt
 	s.URL = snapshot.URL
 	s.Freshness = snapshot.Freshness

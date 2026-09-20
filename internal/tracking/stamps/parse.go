@@ -14,10 +14,10 @@ import (
 
 var latestTime = regexp.MustCompile(`(?i)at (\d{1,2}:\d{2} [ap]m) on ([a-z]+ \d{1,2}, \d{4})`)
 
-func parse(r io.Reader, number string) ([]shop.TrackingEvent, error) {
+func parse(r io.Reader, number string) ([]shop.TrackingEvent, string, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
-		return nil, tracking.UpstreamError("invalid_response")
+		return nil, "", tracking.UpstreamError("invalid_response")
 	}
 	var block *html.Node
 	walk(doc, func(n *html.Node) {
@@ -26,9 +26,10 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, error) {
 		}
 	})
 	if block == nil {
-		return nil, tracking.UpstreamError("unexpected_markup")
+		return nil, "", tracking.UpstreamError("unexpected_markup")
 	}
-	var identity, carrier, summary string
+	var identity, carrier, summary, heading string
+	delivered := false
 	var events []shop.TrackingEvent
 	incomplete := false
 	walk(block, func(n *html.Node) {
@@ -48,6 +49,14 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, error) {
 		}
 		if hasClass(n, "status") {
 			summary = nodeText(n)
+			walk(n, func(c *html.Node) {
+				if c.Type == html.ElementNode && c.Data == "h2" {
+					heading = nodeText(c)
+				}
+			})
+		}
+		if hasClass(n, "step--3") && hasClass(n, "passed") {
+			delivered = true
 		}
 		if !hasClass(n, "event") {
 			return
@@ -70,13 +79,13 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, error) {
 		events = append(events, event)
 	})
 	if identity != number || !strings.EqualFold(carrier, "USPS") {
-		return nil, tracking.UpstreamError("shipment_mismatch")
+		return nil, "", tracking.UpstreamError("shipment_mismatch")
 	}
 	if incomplete {
-		return nil, tracking.UpstreamError("invalid_response")
+		return nil, "", tracking.UpstreamError("invalid_response")
 	}
 	if len(events) == 0 {
-		return nil, tracking.UpstreamError("history_unavailable")
+		return nil, "", tracking.UpstreamError("history_unavailable")
 	}
 	// The table omits times. Only attach the headline's local time when its date
 	// matches the newest row; never manufacture times for older scans.
@@ -88,7 +97,19 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, error) {
 		}
 	}
 
-	return events, nil
+	// The progress bar can lag behind the scan table.
+	delivered = delivered || strings.EqualFold(strings.SplitN(events[0].Description, ",", 2)[0], "Delivered")
+	var estimate string
+	if !delivered {
+		if value, ok := strings.CutPrefix(heading, "Arrives "); ok {
+			value = strings.TrimSpace(value)
+			if value != "" && !strings.EqualFold(value, "Unknown") && !strings.EqualFold(value, "Pending") {
+				estimate = value
+			}
+		}
+	}
+
+	return events, estimate, nil
 }
 
 func walk(n *html.Node, visit func(*html.Node)) {
