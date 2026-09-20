@@ -7,7 +7,6 @@ import (
 
 	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/tracking"
-	"github.com/saucesteals/shop/tracking/ledger"
 	"github.com/saucesteals/shop/tracking/providers"
 )
 
@@ -45,8 +44,8 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 	return track
 }
 
-func (c *CLI) shipmentLedger() ledger.Store {
-	return ledger.Store{ConfigDir: c.app.ConfigDir}
+func (c *CLI) shipmentLedger() tracking.Ledger {
+	return tracking.Ledger{ConfigDir: c.app.ConfigDir}
 }
 
 func (c *CLI) newTrackAddCmd() *cobra.Command {
@@ -70,7 +69,7 @@ func (c *CLI) newTrackAddCmd() *cobra.Command {
 }
 
 func (c *CLI) newTrackListCmd() *cobra.Command {
-	var selection ledger.Selection
+	var selection tracking.Selection
 	cmd := &cobra.Command{Use: "list", Short: "List active and recently delivered shipments (offline)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := selection.Validate(); err != nil {
@@ -89,7 +88,7 @@ func (c *CLI) newTrackListCmd() *cobra.Command {
 	return cmd
 }
 
-func shipmentSelectionFlags(cmd *cobra.Command, selection *ledger.Selection) {
+func shipmentSelectionFlags(cmd *cobra.Command, selection *tracking.Selection) {
 	cmd.Flags().BoolVar(&selection.All, "all", false, "include all saved shipments, including older deliveries")
 	cmd.Flags().StringVar(&selection.DeliveredSince, "delivered-since", "", "include deliveries on or after YYYY-MM-DD (default today)")
 }
@@ -108,7 +107,7 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 }
 
 func (c *CLI) newTrackRefreshCmd() *cobra.Command {
-	var selection ledger.Selection
+	var selection tracking.Selection
 	cmd := &cobra.Command{
 		Use:   "refresh [tracking-number]",
 		Short: "Refresh saved shipments and summarize their latest scans",

@@ -1,4 +1,4 @@
-// Package tracking defines shipment data, carrier detection, and provider routing.
+// Package tracking provides shipment data, carrier routing, and a saved-shipment ledger.
 package tracking
 
 import "time"

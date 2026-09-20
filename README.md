@@ -558,21 +558,21 @@ import (
     "context"
     "net/http"
 
-    "github.com/saucesteals/shop/tracking/ledger"
+    "github.com/saucesteals/shop/tracking"
     "github.com/saucesteals/shop/tracking/providers"
 )
 
-func refresh(ctx context.Context, configDir string, client *http.Client) (*ledger.RefreshResult, error) {
+func refresh(ctx context.Context, configDir string, client *http.Client) (*tracking.RefreshResult, error) {
     tracker, err := providers.New(client)
     if err != nil {
         return nil, err
     }
-    store := ledger.Store{ConfigDir: configDir}
-    return store.Refresh(ctx, tracker, "", ledger.Selection{})
+    store := tracking.Ledger{ConfigDir: configDir}
+    return store.Refresh(ctx, tracker, "", tracking.Selection{})
 }
 ```
 
-`tracking` owns `Shipment`, `Snapshot`, `Event`, and the carrier registry. `tracking/providers` supplies built-in carrier clients with optional HTTP-client injection; `tracking/ledger` handles persistence, selection, and refresh summaries. `Registry.Track` performs a lookup without saving it. `Store.List` reads all saved records offline; apply `Selection.Select` for the active-shipment view. Batch refresh uses the caller's context and retains per-shipment failures in its result. The caller owns any supplied HTTP transport.
+`tracking` owns shipment types, the carrier registry, and the saved-shipment ledger, including selection and refresh summaries. `tracking/providers` supplies built-in carrier clients with optional HTTP-client injection. `Registry.Track` performs a lookup without saving it. `Ledger.List` reads all saved records offline; apply `Selection.Select` for the active-shipment view. Batch refresh uses the caller's context and retains per-shipment failures in its result. The caller owns any supplied HTTP transport.
 
 Library callers use `shop.Open`, `provider/amazon`, and the public tracking packages directly. The old `shop.Resolve`/`SetResolver` callback, root tracking types, and `shop/amazon` import wrapper are removed. CLI commands and saved JSON formats are unchanged.
 

@@ -1,4 +1,3 @@
-// Package tracking defines carrier routing and shipment-number validation.
 package tracking
 
 import (

@@ -1,5 +1,4 @@
-// Package ledger stores saved shipments and refreshes their tracking snapshots.
-package ledger
+package tracking
 
 import (
 	"encoding/json"
@@ -9,18 +8,17 @@ import (
 
 	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/internal/config"
-	"github.com/saucesteals/shop/tracking"
 )
 
-// Store stores one private record per tracking number.
+// Ledger stores one private record per tracking number.
 // Adding an existing number fails rather than silently overwriting its metadata.
-type Store struct {
+type Ledger struct {
 	ConfigDir string
 }
 
 // Add atomically publishes a record, without overwriting concurrent additions.
-func (l Store) Add(entry tracking.Shipment) (*tracking.Shipment, error) {
-	number, err := tracking.Number(entry.TrackingNumber)
+func (l Ledger) Add(entry Shipment) (*Shipment, error) {
+	number, err := Number(entry.TrackingNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -41,12 +39,12 @@ func (l Store) Add(entry tracking.Shipment) (*tracking.Shipment, error) {
 }
 
 // List returns saved shipments in tracking-number order without network requests.
-func (l Store) List() ([]tracking.Shipment, error) {
+func (l Ledger) List() ([]Shipment, error) {
 	keys, err := config.ListStates(l.ConfigDir, "", "shipments")
 	if err != nil {
 		return nil, ledgerError(err)
 	}
-	result := make([]tracking.Shipment, 0, len(keys))
+	result := make([]Shipment, 0, len(keys))
 	for _, key := range keys {
 		data, err := config.LoadState(l.ConfigDir, "", "shipments", key)
 		if err != nil {
@@ -55,7 +53,7 @@ func (l Store) List() ([]tracking.Shipment, error) {
 		if data == nil {
 			continue
 		}
-		var shipment tracking.Shipment
+		var shipment Shipment
 		if err := json.Unmarshal(data, &shipment); err != nil {
 			return nil, ledgerError(err)
 		}
@@ -66,8 +64,8 @@ func (l Store) List() ([]tracking.Shipment, error) {
 }
 
 // Remove deletes the local shipment record, not the carrier shipment.
-func (l Store) Remove(value string) error {
-	number, err := tracking.Number(value)
+func (l Ledger) Remove(value string) error {
+	number, err := Number(value)
 	if err != nil {
 		return err
 	}
@@ -83,7 +81,7 @@ func ledgerError(err error) error {
 }
 
 // save replaces a shipment record atomically through the shared state layer.
-func (l Store) save(shipment tracking.Shipment) error {
+func (l Ledger) save(shipment Shipment) error {
 	data, err := json.MarshalIndent(shipment, "", "  ")
 	if err != nil {
 		return err

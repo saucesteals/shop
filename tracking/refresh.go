@@ -1,4 +1,4 @@
-package ledger
+package tracking
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/saucesteals/shop"
-	"github.com/saucesteals/shop/tracking"
 )
 
 // RefreshResult summarizes a batch without discarding individual failures.
@@ -19,26 +18,26 @@ type RefreshResult struct {
 
 // Summary combines local attribution and the latest successful lookup.
 type Summary struct {
-	tracking.Shipment
-	ExpectedDelivery string          `json:"expectedDelivery,omitempty"`
-	Latest           *tracking.Event `json:"latest,omitempty"`
-	FetchedAt        time.Time       `json:"fetchedAt,omitzero"`
-	URL              string          `json:"url,omitempty"`
-	Freshness        string          `json:"freshness"`
-	Refreshed        bool            `json:"refreshed"`
-	Error            *shop.Error     `json:"error,omitempty"`
+	Shipment
+	ExpectedDelivery string      `json:"expectedDelivery,omitempty"`
+	Latest           *Event      `json:"latest,omitempty"`
+	FetchedAt        time.Time   `json:"fetchedAt,omitzero"`
+	URL              string      `json:"url,omitempty"`
+	Freshness        string      `json:"freshness"`
+	Refreshed        bool        `json:"refreshed"`
+	Error            *shop.Error `json:"error,omitempty"`
 }
 
 // Refresh updates saved snapshots, preserving previous history on lookup failure.
 // An empty number applies selection to the ledger. An explicit number bypasses
 // selection. Lookups share the caller's deadline.
-func (l Store) Refresh(ctx context.Context, tracker tracking.Tracker, number string, selection Selection) (*RefreshResult, error) {
+func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string, selection Selection) (*RefreshResult, error) {
 	if err := selection.Validate(); err != nil {
 		return nil, err
 	}
 	if number != "" {
 		var err error
-		number, err = tracking.Number(number)
+		number, err = Number(number)
 		if err != nil {
 			return nil, err
 		}
@@ -94,7 +93,7 @@ func (l Store) Refresh(ctx context.Context, tracker tracking.Tracker, number str
 	return result, nil
 }
 
-func (s *Summary) apply(snapshot *tracking.Snapshot) {
+func (s *Summary) apply(snapshot *Snapshot) {
 	if len(snapshot.Events) > 0 {
 		event := snapshot.Events[0]
 		s.Latest = &event
