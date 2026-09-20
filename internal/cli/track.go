@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
+	"time"
 
 	"github.com/saucesteals/shop"
 	"github.com/saucesteals/shop/internal/tracking"
@@ -67,15 +68,28 @@ func (c *CLI) newTrackAddCmd() *cobra.Command {
 }
 
 func (c *CLI) newTrackListCmd() *cobra.Command {
-	return &cobra.Command{Use: "list", Short: "List saved shipments (offline)", Args: cobra.NoArgs,
+	var selection tracking.Selection
+	cmd := &cobra.Command{Use: "list", Short: "List active and recently delivered shipments (offline)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := selection.Validate(); err != nil {
+				return err
+			}
 			entries, err := c.shipmentLedger().List()
 			if err != nil {
 				return err
 			}
-			return c.outputJSON(entries)
+
+			return c.outputJSON(selection.Select(entries, time.Now()))
 		},
 	}
+	shipmentSelectionFlags(cmd, &selection)
+
+	return cmd
+}
+
+func shipmentSelectionFlags(cmd *cobra.Command, selection *tracking.Selection) {
+	cmd.Flags().BoolVar(&selection.All, "all", false, "include all saved shipments, including older deliveries")
+	cmd.Flags().StringVar(&selection.DeliveredSince, "delivered-since", "", "include deliveries on or after YYYY-MM-DD (default today)")
 }
 
 func (c *CLI) newTrackRemoveCmd() *cobra.Command {
@@ -92,7 +106,8 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 }
 
 func (c *CLI) newTrackRefreshCmd() *cobra.Command {
-	return &cobra.Command{
+	var selection tracking.Selection
+	cmd := &cobra.Command{
 		Use:   "refresh [tracking-number]",
 		Short: "Refresh saved shipments and summarize their latest scans",
 		Args:  cobra.MaximumNArgs(1),
@@ -107,7 +122,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := c.shipmentLedger().Refresh(ctx, client, number)
+			result, err := c.shipmentLedger().Refresh(ctx, client, number, selection)
 			if err != nil {
 				return err
 			}
@@ -121,4 +136,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			return nil
 		},
 	}
+	shipmentSelectionFlags(cmd, &selection)
+
+	return cmd
 }

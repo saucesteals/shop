@@ -339,7 +339,9 @@ Save packages in a local ledger so you know what each number belongs to:
 shop track add <tracking-number> --label "Desk equipment" \
   --merchant "Example Store" --order-id "ORDER001" --note "Office delivery"
 shop track list
-shop track refresh                    # Refresh all saved shipments
+shop track list --all                 # Include older deliveries
+shop track refresh --delivered-since 2026-01-01
+shop track refresh                    # Refresh active + delivered today
 shop track refresh <tracking-number>  # Refresh one saved shipment
 shop track remove <tracking-number>
 ```
@@ -364,9 +366,11 @@ Results may be cached. `fetchedAt` is the retrieval time, not the time the carri
 
 Each shipment is stored as one JSON record in `state/shipments/<tracking-number>.json`, with attribution and a `tracking` snapshot holding the last successful lookup and its scan events. `track list` reads these records offline.
 
-`shop track refresh` looks up saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
+`shop track refresh` looks up selected saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
 
 Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
+
+`list` and batch `refresh` default to undelivered shipments plus deliveries dated today. Use `--all` for every saved shipment or `--delivered-since YYYY-MM-DD` for an inclusive delivery-date cutoff; these flags cannot be combined. Explicit-number refreshes always run. Filtering uses the latest saved scan, not fetch time; unknown statuses/dates remain included. Dates with offsets are compared in the CLI host’s local timezone; dates without offsets retain the carrier’s calendar date. Newly discovered deliveries remain in that refresh’s output, even when dated earlier. Records are never deleted by filtering.
 
 The timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
 
