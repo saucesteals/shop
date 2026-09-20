@@ -331,7 +331,7 @@ shop track <tracking-number> --pretty
 shop track <tracking-number> | jq '.events[0]'
 ```
 
-Returns the tracking number, source, tracking URL, retrieval time, and scan history. `expectedDelivery`, when available, is a carrier-provided estimate (currently supported for UPS), not a guarantee. Each event includes its date, time, description, and location when available.
+Returns the tracking number, source, tracking URL, retrieval time, and scan history. `expectedDelivery` contains the source’s delivery estimate when available, not a guarantee. All supported carriers can expose an estimate; availability depends on the shipment. Each event includes its date, time, description, and location when available.
 
 Save packages in a local ledger so you know what each number belongs to:
 
