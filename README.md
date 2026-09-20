@@ -333,7 +333,7 @@ shop track <tracking-number> | jq '.events[0]'
 
 Returns the tracking number, source, tracking URL, retrieval time, and scan history. `expectedDelivery` contains the source’s delivery estimate when available, not a guarantee. All supported carriers can expose an estimate; availability depends on the shipment. Each event includes its date, time, description, and location when available.
 
-Save packages in a local ledger so you know what each number belongs to:
+Save packages in a local shipment collection so you know what each number belongs to:
 
 ```bash
 shop track add <tracking-number> --label "Desk equipment" \
@@ -368,11 +368,11 @@ Each shipment is stored as one JSON record in `state/shipments/<tracking-number>
 
 `shop track refresh` looks up selected saved shipments and returns `{total, refreshed, failed, shipments}`. Each shipment includes its saved attribution, `latest` scan, `fetchedAt`, tracking URL, `freshness`, and `refreshed` flag. Failed entries include a structured `error` and retain the previous successful snapshot when one exists; never present those as newly refreshed.
 
-Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty ledger returns an empty summary without network requests.
+Ordinary `shop track <tracking-number>` remains a one-off lookup. Refreshing an unsaved number returns `not_found`. An empty collection returns an empty summary without network requests.
 
 `list` and batch `refresh` default to undelivered shipments plus deliveries dated today. Use `--all` for every saved shipment or `--delivered-since YYYY-MM-DD` for an inclusive delivery-date cutoff; these flags cannot be combined. Explicit-number refreshes always run. Filtering uses the latest saved scan, not fetch time; unknown statuses/dates remain included. Dates with offsets are compared in the CLI host’s local timezone; dates without offsets retain the carrier’s calendar date. Newly discovered deliveries remain in that refresh’s output, even when dated earlier. Records are never deleted by filtering.
 
-The timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
+The CLI timeout applies to the whole batch. Partial failures still produce the summary on stdout and return exit 51 with an error on stderr. A successful refresh means the source responded successfully, not that it contacted the carrier just now. No background polling is started.
 
 ### Account
 
@@ -551,30 +551,53 @@ func openStore(ctx context.Context, configDir string) (shop.Store, error) {
 }
 ```
 
-Tracking uses the same public packages as the CLI, without invoking a subprocess:
+#### Shipment tracking
+
+Use a single API client directly, or register only the carriers your application needs:
 
 ```go
 import (
     "context"
     "net/http"
+    "time"
 
     "github.com/saucesteals/shop/tracking"
-    "github.com/saucesteals/shop/tracking/providers"
+    "github.com/saucesteals/shop/tracking/stamps"
+    "github.com/saucesteals/shop/tracking/ups"
 )
 
-func refresh(ctx context.Context, configDir string, client *http.Client) (*tracking.RefreshResult, error) {
-    tracker, err := providers.New(client)
+func lookup(ctx context.Context, number string, client *http.Client) (*tracking.Snapshot, error) {
+    tracker, err := tracking.NewRegistry(ups.New(client), stamps.New(client))
     if err != nil {
         return nil, err
     }
-    store := tracking.Ledger{ConfigDir: configDir}
-    return store.Refresh(ctx, tracker, "", tracking.Selection{})
+    return tracker.Track(ctx, number)
+}
+
+func refresh(ctx context.Context, configDir string, tracker tracking.Tracker) ([]tracking.Result, error) {
+    store := tracking.NewStore(configDir)
+    return store.RefreshAll(ctx, tracker, tracking.RefreshOptions{
+        Filter:  tracking.Filter{}, // Active shipments and deliveries dated today.
+        Timeout: 35 * time.Second,  // Independent allowance for each shipment.
+    })
 }
 ```
 
-`tracking` owns shipment types, the carrier registry, and the saved-shipment ledger, including selection and refresh summaries. `tracking/providers` assembles the built-in clients. Each API has its own package (`ups`, `stamps`, `fedex`, `gofo`, `yanwen`) under it, exposing `Client` and `New(*http.Client)`. Clients use standard `net/http` configuration directly; there is no shared HTTP wrapper. `Registry.Track` performs a lookup without saving it. `Ledger.List` reads all saved records offline; apply `Selection.Select` for the active-shipment view. Batch refresh uses the caller's context and retains per-shipment failures in its result. The caller owns any supplied HTTP transport.
+`Registry.Track` and individual clients perform lookups without saving anything. Clients live in `tracking/ups`, `tracking/stamps`, `tracking/fedex`, `tracking/gofo`, and `tracking/yanwen`; each exposes `New(*http.Client)`. Configure and reuse clients before concurrent use. The caller owns the HTTP transport; UPS creates an isolated cookie session for each lookup. `Snapshot.Latest()` returns the newest scan, or nil for an empty snapshot.
 
-Library callers use `shop.Open`, `provider/amazon`, and the public tracking packages directly. The old `shop.Resolve`/`SetResolver` callback, root tracking types, and `shop/amazon` import wrapper are removed. CLI commands and saved JSON formats are unchanged.
+**Saved shipments** use `tracking.Store`, backed by `state/shipments/` under the supplied Shop configuration directory:
+
+- `Add(ctx, shipment)` creates a record; duplicates preserve `os.ErrExist` for `errors.Is`.
+- `Get(ctx, number)` reads one record directly; missing records preserve `os.ErrNotExist`.
+- `Update(ctx, shipment)` edits an existing record while preserving its original `AddedAt`.
+- `List(ctx, filter)` reads matching records offline. `Filter{All: true}` includes older deliveries; `DeliveredSince` accepts a `time.Time` calendar date.
+- `Remove(ctx, number)` deletes local state and ignores missing records.
+- `Refresh(ctx, tracker, number)` refreshes one saved shipment regardless of age. On failure it returns the last record read, when available, alongside the error.
+- `RefreshAll(ctx, tracker, options)` returns one `Result{Shipment, Err}` per attempted shipment, with the full saved snapshot. Individual failures do not abort the batch. Caller cancellation returns partial results and a top-level context error; check both.
+
+Lookups that fail or return an invalid identity never replace saved history. A successful refresh result means its snapshot was persisted. Writes are atomic, but concurrent read-modify-write operations are not cross-process transactions. Selection uses the latest saved scan, not retrieval time; unknown statuses and dates remain eligible. `Filter.Includes` and `Filter.Select` also accept an explicit clock for caller-owned collections and timezone handling.
+
+Compact refresh summaries and structured JSON errors are CLI presentation, not library return types. Library callers retain Go errors, full snapshots, and control over deadlines. For change-only notifications, compare the scan history and ETA with your own saved observations—not `FetchedAt`. To detect late delivery updates after filtering stops further polling, inspect `List(ctx, Filter{All: true})` when comparing notifications.
 
 ### Adding a New Provider
 
@@ -588,9 +611,9 @@ That's it. No config files, no factory registration, no dependency injection. Th
 
 Tracking providers are separate from shopping stores. Each implements `tracking.Provider`: `Track` retrieves a snapshot and `Carriers` declares the typed carrier IDs it handles. `tracking.NewRegistry` builds the routing map and rejects duplicate handlers or undeclared carrier IDs.
 
-`tracking/providers.New` wires the built-in providers. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
+The CLI wires its built-in clients explicitly; library applications choose their own registry. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
 
-To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
+To add a tracking provider, implement the interface and include it in the application's registry. A new carrier also needs a declared ID and a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
 
 ---
 

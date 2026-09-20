@@ -48,7 +48,7 @@ func (c *Client) Carriers() []tracking.Carrier {
 
 // Track retrieves scans without retaining cookies or account information.
 func (c *Client) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
-	number, err := tracking.Number(number)
+	number, err := tracking.NormalizeNumber(number)
 	if err != nil {
 		return nil, err
 	}

@@ -51,7 +51,7 @@ func (c *Client) Carriers() []tracking.Carrier {
 
 // Track retrieves scans without persisting session credentials.
 func (c *Client) Track(ctx context.Context, input string) (*tracking.Snapshot, error) {
-	number, err := tracking.Number(input)
+	number, err := tracking.NormalizeNumber(input)
 	if err != nil {
 		return nil, err
 	}

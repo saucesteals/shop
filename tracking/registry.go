@@ -55,9 +55,10 @@ func NewRegistry(providers ...Provider) (*Registry, error) {
 }
 
 // Track selects the registered provider or reports an unsupported carrier.
-// Provider errors are returned unchanged; requests never silently switch sources.
+// Provider errors are preserved unless the caller canceled the request. Successful
+// snapshots are validated; requests never silently switch sources.
 func (r *Registry) Track(ctx context.Context, number string) (*Snapshot, error) {
-	number, err := Number(number)
+	number, err := NormalizeNumber(number)
 	if err != nil {
 		return nil, err
 	}
@@ -66,5 +67,19 @@ func (r *Registry) Track(ctx context.Context, number string) (*Snapshot, error) 
 		return nil, shop.Errorf(shop.ErrNotSupported, "tracking carrier is not supported")
 	}
 
-	return provider.Track(ctx, number)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	snapshot, err := provider.Track(ctx, number)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := validateSnapshot(snapshot, number); err != nil {
+		return nil, err
+	}
+
+	return snapshot, nil
 }

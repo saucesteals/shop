@@ -7,22 +7,18 @@ import (
 	"github.com/saucesteals/shop"
 )
 
-// Selection controls which saved shipments are displayed or refreshed.
+// Filter controls which saved shipments are displayed or refreshed.
 // The zero value includes unresolved shipments and deliveries dated today.
-type Selection struct {
+// DeliveredSince uses its calendar date, ignoring the time of day.
+type Filter struct {
 	All            bool
-	DeliveredSince string
+	DeliveredSince time.Time
 }
 
-// Validate rejects conflicting filters and malformed calendar dates.
-func (s Selection) Validate() error {
-	if s.All && s.DeliveredSince != "" {
-		return shop.Errorf(shop.ErrInvalidInput, "--all and --delivered-since cannot be combined")
-	}
-	if s.DeliveredSince != "" {
-		if _, err := time.Parse(time.DateOnly, s.DeliveredSince); err != nil {
-			return shop.Errorf(shop.ErrInvalidInput, "--delivered-since must be YYYY-MM-DD")
-		}
+// Validate rejects conflicting filters.
+func (s Filter) Validate() error {
+	if s.All && !s.DeliveredSince.IsZero() {
+		return shop.Errorf(shop.ErrInvalidInput, "all and delivered-since filters cannot be combined")
 	}
 
 	return nil
@@ -31,7 +27,7 @@ func (s Selection) Validate() error {
 // Includes uses the latest saved scan, never retrieval time, to select a shipment.
 // Unknown statuses or dates remain eligible. Offset-bearing dates use now's local
 // timezone; carrier dates without offsets retain their reported calendar date.
-func (s Selection) Includes(entry Shipment, now time.Time) bool {
+func (s Filter) Includes(entry Shipment, now time.Time) bool {
 	if s.All || entry.Tracking == nil || len(entry.Tracking.Events) == 0 {
 		return true
 	}
@@ -57,8 +53,8 @@ func (s Selection) Includes(entry Shipment, now time.Time) bool {
 	if day == "" {
 		return true
 	}
-	cutoff := s.DeliveredSince
-	if cutoff == "" {
+	cutoff := s.DeliveredSince.Format(time.DateOnly)
+	if s.DeliveredSince.IsZero() {
 		cutoff = now.Format(time.DateOnly)
 	}
 
@@ -66,7 +62,7 @@ func (s Selection) Includes(entry Shipment, now time.Time) bool {
 }
 
 // Select returns matching entries in their original order without altering state.
-func (s Selection) Select(entries []Shipment, now time.Time) []Shipment {
+func (s Filter) Select(entries []Shipment, now time.Time) []Shipment {
 	selected := make([]Shipment, 0, len(entries))
 	for _, entry := range entries {
 		if s.Includes(entry, now) {

@@ -2,104 +2,97 @@ package tracking
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
-
-	"github.com/saucesteals/shop"
 )
 
-// RefreshResult summarizes a batch without discarding individual failures.
-type RefreshResult struct {
-	Total     int       `json:"total"`
-	Refreshed int       `json:"refreshed"`
-	Failed    int       `json:"failed"`
-	Shipments []Summary `json:"shipments"`
+// RefreshOptions controls a saved-shipment batch. Zero values select active
+// shipments and use only the caller's deadline. Timeout bounds each lookup
+// independently; a failure does not consume the next shipment's allowance.
+type RefreshOptions struct {
+	Filter  Filter
+	Timeout time.Duration
 }
 
-// Summary combines local attribution and the latest successful lookup.
-type Summary struct {
-	Shipment
-	ExpectedDelivery string      `json:"expectedDelivery,omitempty"`
-	Latest           *Event      `json:"latest,omitempty"`
-	FetchedAt        time.Time   `json:"fetchedAt,omitzero"`
-	URL              string      `json:"url,omitempty"`
-	Freshness        string      `json:"freshness"`
-	Refreshed        bool        `json:"refreshed"`
-	Error            *shop.Error `json:"error,omitempty"`
+// Result is one refresh outcome. Shipment contains the saved record, including
+// its full snapshot. Err is nil only after the new snapshot has been persisted.
+// On failure, Shipment retains the last record read; it is not a fresh lookup.
+type Result struct {
+	Shipment Shipment
+	Err      error
 }
 
-// Refresh updates saved snapshots, preserving previous history on lookup failure.
-// An empty number applies selection to the ledger. An explicit number bypasses
-// selection. Lookups share the caller's deadline.
-func (l Ledger) Refresh(ctx context.Context, tracker Tracker, number string, selection Selection) (*RefreshResult, error) {
-	if err := selection.Validate(); err != nil {
-		return nil, err
-	}
-	if number != "" {
-		var err error
-		number, err = Number(number)
-		if err != nil {
-			return nil, err
-		}
-	}
-	entries, err := l.List()
+// Refresh fetches and saves one existing shipment, regardless of delivery age.
+// On lookup or save failure it returns the previous saved record with the error.
+// No record is written on lookup failure. Caller controls cancellation and timeout.
+func (s *Store) Refresh(ctx context.Context, tracker Tracker, number string) (*Shipment, error) {
+	shipment, err := s.Get(ctx, number)
 	if err != nil {
 		return nil, err
 	}
-	if number == "" {
-		entries = selection.Select(entries, time.Now())
+	if tracker == nil {
+		return shipment, fmt.Errorf("tracking client is required")
 	}
-	result := &RefreshResult{Shipments: make([]Summary, 0, len(entries))}
-	for _, entry := range entries {
-		if number != "" && entry.TrackingNumber != number {
-			continue
-		}
-		summary := Summary{Shipment: entry, Freshness: "unknown"}
-		// Keep the full history in storage/list output, not the compact summary.
-		summary.Tracking = nil
-		if entry.Tracking != nil {
-			summary.apply(entry.Tracking)
-		}
-		snapshot, lookupErr := tracker.Track(ctx, entry.TrackingNumber)
-		if lookupErr == nil && (snapshot == nil || len(snapshot.Events) == 0 || snapshot.TrackingNumber != entry.TrackingNumber) {
-			lookupErr = shop.Errorf(shop.ErrUpstream, "tracking source returned an invalid snapshot")
-		}
-		if lookupErr == nil {
-			entry.Tracking = snapshot
-			lookupErr = l.save(entry)
-			if lookupErr == nil {
-				summary.apply(snapshot)
-				summary.Refreshed = true
-				result.Refreshed++
-			} else {
-				lookupErr = ledgerError(lookupErr)
-			}
-		}
-		if lookupErr != nil {
-			var structured *shop.Error
-			if !errors.As(lookupErr, &structured) {
-				structured = shop.Errorf(shop.ErrNetwork, "shipment refresh failed")
-			}
-			summary.Error = structured
-			result.Failed++
-		}
-		result.Shipments = append(result.Shipments, summary)
+	snapshot, err := tracker.Track(ctx, shipment.TrackingNumber)
+	if ctx.Err() != nil {
+		return shipment, ctx.Err()
 	}
-	result.Total = len(result.Shipments)
-	if number != "" && result.Total == 0 {
-		return nil, shop.Errorf(shop.ErrNotFound, "shipment is not saved; use track add first")
+	if err != nil {
+		return shipment, err
+	}
+	if err := validateSnapshot(snapshot, shipment.TrackingNumber); err != nil {
+		return shipment, err
+	}
+	// Re-read after the network request so an intervening removal or metadata
+	// edit is observed. This is not a cross-process compare-and-swap operation.
+	current, err := s.Get(ctx, shipment.TrackingNumber)
+	if err != nil {
+		return shipment, err
+	}
+	previous := *current
+	current.Tracking = snapshot
+	if err := s.Update(ctx, *current); err != nil {
+		return &previous, err
 	}
 
-	return result, nil
+	return current, nil
 }
 
-func (s *Summary) apply(snapshot *Snapshot) {
-	if len(snapshot.Events) > 0 {
-		event := snapshot.Events[0]
-		s.Latest = &event
+// RefreshAll refreshes the selected records sequentially in tracking-number order.
+// Per-shipment errors remain in results and do not abort the batch. A top-level
+// error means invalid options, a listing failure, or caller cancellation. On
+// cancellation, results for attempted shipments are returned alongside the error.
+func (s *Store) RefreshAll(ctx context.Context, tracker Tracker, options RefreshOptions) ([]Result, error) {
+	if tracker == nil {
+		return nil, fmt.Errorf("tracking client is required")
 	}
-	s.ExpectedDelivery = snapshot.ExpectedDelivery
-	s.FetchedAt = snapshot.FetchedAt
-	s.URL = snapshot.URL
-	s.Freshness = snapshot.Freshness
+	if options.Timeout < 0 {
+		return nil, fmt.Errorf("refresh timeout must not be negative")
+	}
+	shipments, err := s.List(ctx, options.Filter)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(shipments))
+	for _, shipment := range shipments {
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
+		lookupCtx := ctx
+		cancel := func() {}
+		if options.Timeout > 0 {
+			lookupCtx, cancel = context.WithTimeout(ctx, options.Timeout)
+		}
+		updated, err := s.Refresh(lookupCtx, tracker, shipment.TrackingNumber)
+		cancel()
+		if updated != nil {
+			shipment = *updated
+		}
+		results = append(results, Result{
+			Shipment: shipment,
+			Err:      err,
+		})
+	}
+
+	return results, ctx.Err()
 }
