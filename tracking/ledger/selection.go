@@ -1,10 +1,11 @@
-package tracking
+package ledger
 
 import (
 	"strings"
 	"time"
 
 	"github.com/saucesteals/shop"
+	"github.com/saucesteals/shop/tracking"
 )
 
 // Selection controls which saved shipments are displayed or refreshed.
@@ -31,7 +32,7 @@ func (s Selection) Validate() error {
 // Includes uses the latest saved scan, never retrieval time, to select a shipment.
 // Unknown statuses or dates remain eligible. Offset-bearing dates use now's local
 // timezone; carrier dates without offsets retain their reported calendar date.
-func (s Selection) Includes(entry shop.Shipment, now time.Time) bool {
+func (s Selection) Includes(entry tracking.Shipment, now time.Time) bool {
 	if s.All || entry.Tracking == nil || len(entry.Tracking.Events) == 0 {
 		return true
 	}
@@ -66,8 +67,8 @@ func (s Selection) Includes(entry shop.Shipment, now time.Time) bool {
 }
 
 // Select returns matching entries in their original order without altering state.
-func (s Selection) Select(entries []shop.Shipment, now time.Time) []shop.Shipment {
-	selected := make([]shop.Shipment, 0, len(entries))
+func (s Selection) Select(entries []tracking.Shipment, now time.Time) []tracking.Shipment {
+	selected := make([]tracking.Shipment, 0, len(entries))
 	for _, entry := range entries {
 		if s.Includes(entry, now) {
 			selected = append(selected, entry)

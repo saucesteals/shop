@@ -1,4 +1,4 @@
-// Package tracking holds shipment-specific validation and local storage.
+// Package tracking defines carrier routing and shipment-number validation.
 package tracking
 
 import (

@@ -1,10 +1,10 @@
-package tracking
+package providers
 
 import "time"
 
-// DeliveryWindow formats carrier timestamps without converting their timezone.
+// deliveryWindow formats carrier timestamps without converting their timezone.
 // Each endpoint retains its date and numeric offset, including overnight windows.
-func DeliveryWindow(start, end time.Time) string {
+func deliveryWindow(start, end time.Time) string {
 	const layout = "Mon, Jan 2, 2006 3:04 PM -07:00"
 
 	return start.Format(layout) + " – " + end.Format(layout)

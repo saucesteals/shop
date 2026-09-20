@@ -525,18 +525,60 @@ Also accepts raw domains (`amazon.co.uk`, `amazon.de`), `SHOP_STORE` env var, or
 Providers self-register via `init()` and a `shop.Register()` call. The resolution layer discovers them automatically — zero wiring:
 
 ```go
-// internal/provider/amazon/amazon.go
+// provider/amazon/amazon.go
 func init() {
     shop.Register(&Provider{})
 }
 
 // cmd/shop/main.go
-import _ "github.com/saucesteals/shop/internal/provider/amazon"
+import _ "github.com/saucesteals/shop/provider/amazon"
 ```
+
+### Library Usage
+
+Import a shopping provider directly to register it, then open a store with a caller-owned config directory:
+
+```go
+import (
+    "context"
+
+    "github.com/saucesteals/shop"
+    _ "github.com/saucesteals/shop/provider/amazon"
+)
+
+func openStore(ctx context.Context, configDir string) (shop.Store, error) {
+    return shop.Open(ctx, "amazon.com", configDir)
+}
+```
+
+Tracking uses the same public packages as the CLI, without invoking a subprocess:
+
+```go
+import (
+    "context"
+    "net/http"
+
+    "github.com/saucesteals/shop/tracking/ledger"
+    "github.com/saucesteals/shop/tracking/providers"
+)
+
+func refresh(ctx context.Context, configDir string, client *http.Client) (*ledger.RefreshResult, error) {
+    tracker, err := providers.New(client)
+    if err != nil {
+        return nil, err
+    }
+    store := ledger.Store{ConfigDir: configDir}
+    return store.Refresh(ctx, tracker, "", ledger.Selection{})
+}
+```
+
+`tracking` owns `Shipment`, `Snapshot`, `Event`, and the carrier registry. `tracking/providers` supplies built-in carrier clients with optional HTTP-client injection; `tracking/ledger` handles persistence, selection, and refresh summaries. `Registry.Track` performs a lookup without saving it. `Store.List` reads all saved records offline; apply `Selection.Select` for the active-shipment view. Batch refresh uses the caller's context and retains per-shipment failures in its result. The caller owns any supplied HTTP transport.
+
+Library callers use `shop.Open`, `provider/amazon`, and the public tracking packages directly. The old `shop.Resolve`/`SetResolver` callback, root tracking types, and `shop/amazon` import wrapper are removed. CLI commands and saved JSON formats are unchanged.
 
 ### Adding a New Provider
 
-1. Create `internal/provider/<name>/` implementing `shop.Provider`, `shop.Store`, and `shop.Cart`
+1. Create `provider/<name>/` implementing `shop.Provider`, `shop.Store`, and `shop.Cart`
 2. Call `shop.Register(&Provider{})` in `init()`
 3. Add a blank import in `cmd/shop/main.go`
 
@@ -546,7 +588,7 @@ That's it. No config files, no factory registration, no dependency injection. Th
 
 Tracking providers are separate from shopping stores. Each implements `tracking.Provider`: `Track` retrieves a snapshot and `Carriers` declares the typed carrier IDs it handles. `tracking.NewRegistry` builds the routing map and rejects duplicate handlers or undeclared carrier IDs.
 
-`internal/tracking/carriers.New` wires the built-in providers. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
+`tracking/providers.New` wires the built-in providers. Number detection lives in `tracking.DetectCarrier`, not in the CLI or individual providers. Unknown formats and carriers without a registered handler return `not_supported`; a selected provider's error is returned without silently switching sources.
 
 To add a tracking provider, implement the interface and include it in the built-in registry. A new carrier also needs a declared ID and a documented number-format detection rule. Numeric detection is heuristic: FedEx currently accepts 12- and 15-digit formats, not every FedEx service format.
 

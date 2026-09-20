@@ -1,12 +1,14 @@
 package cli
 
 import (
-	"github.com/spf13/cobra"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/saucesteals/shop"
-	"github.com/saucesteals/shop/internal/tracking"
-	"github.com/saucesteals/shop/internal/tracking/carriers"
+	"github.com/saucesteals/shop/tracking"
+	"github.com/saucesteals/shop/tracking/ledger"
+	"github.com/saucesteals/shop/tracking/providers"
 )
 
 func (c *CLI) newTrackCmd() *cobra.Command {
@@ -27,7 +29,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client, err := carriers.New()
+			client, err := providers.New(nil)
 			if err != nil {
 				return err
 			}
@@ -43,12 +45,12 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 	return track
 }
 
-func (c *CLI) shipmentLedger() tracking.Ledger {
-	return tracking.Ledger{ConfigDir: c.app.ConfigDir}
+func (c *CLI) shipmentLedger() ledger.Store {
+	return ledger.Store{ConfigDir: c.app.ConfigDir}
 }
 
 func (c *CLI) newTrackAddCmd() *cobra.Command {
-	var entry shop.Shipment
+	var entry tracking.Shipment
 	cmd := &cobra.Command{
 		Use: "add <tracking-number>", Short: "Save local shipment attribution", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,7 +70,7 @@ func (c *CLI) newTrackAddCmd() *cobra.Command {
 }
 
 func (c *CLI) newTrackListCmd() *cobra.Command {
-	var selection tracking.Selection
+	var selection ledger.Selection
 	cmd := &cobra.Command{Use: "list", Short: "List active and recently delivered shipments (offline)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := selection.Validate(); err != nil {
@@ -87,7 +89,7 @@ func (c *CLI) newTrackListCmd() *cobra.Command {
 	return cmd
 }
 
-func shipmentSelectionFlags(cmd *cobra.Command, selection *tracking.Selection) {
+func shipmentSelectionFlags(cmd *cobra.Command, selection *ledger.Selection) {
 	cmd.Flags().BoolVar(&selection.All, "all", false, "include all saved shipments, including older deliveries")
 	cmd.Flags().StringVar(&selection.DeliveredSince, "delivered-since", "", "include deliveries on or after YYYY-MM-DD (default today)")
 }
@@ -106,7 +108,7 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 }
 
 func (c *CLI) newTrackRefreshCmd() *cobra.Command {
-	var selection tracking.Selection
+	var selection ledger.Selection
 	cmd := &cobra.Command{
 		Use:   "refresh [tracking-number]",
 		Short: "Refresh saved shipments and summarize their latest scans",
@@ -118,7 +120,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 			}
 			ctx, cancel := c.timeoutCtx(cmd)
 			defer cancel()
-			client, err := carriers.New()
+			client, err := providers.New(nil)
 			if err != nil {
 				return err
 			}

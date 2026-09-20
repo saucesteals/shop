@@ -1,7 +1,11 @@
-package stamps
+package providers
 
 import (
+	"bytes"
+	"context"
 	"io"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -9,15 +13,62 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/saucesteals/shop"
-	"github.com/saucesteals/shop/internal/tracking"
+	"github.com/saucesteals/shop/tracking"
 )
+
+// stampsClient retrieves tracking without accounts or persistent sessions.
+type stampsClient struct {
+	http *httpClient
+}
+
+// Carriers declares the delivery networks handled by this provider.
+func (c *stampsClient) Carriers() []tracking.Carrier {
+	return []tracking.Carrier{tracking.USPS}
+}
+
+// Track reads the current published scan history, which may be cached upstream.
+func (c *stampsClient) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
+	number, err := tracking.Number(number)
+	if err != nil {
+		return nil, err
+	}
+	if tracking.DetectCarrier(number) != tracking.USPS {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "unsupported carrier tracking number")
+	}
+	endpoint := "https://www.stamps.com/tracking-details/?" + url.Values{"t": {number}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrInternal, "create tracking request")
+	}
+	req.Header.Set("Accept", "text/html")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("User-Agent", userAgent)
+	body, err := c.http.do(req)
+	if err != nil {
+		return nil, err
+	}
+	events, estimate, err := parseStamps(bytes.NewReader(body), number)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tracking.Snapshot{
+		TrackingNumber:   number,
+		Source:           "stamps",
+		URL:              endpoint,
+		FetchedAt:        time.Now().UTC(),
+		Freshness:        "unknown",
+		Events:           events,
+		ExpectedDelivery: estimate,
+	}, nil
+}
 
 var latestTime = regexp.MustCompile(`(?i)at (\d{1,2}:\d{2} [ap]m) on ([a-z]+ \d{1,2}, \d{4})`)
 
-func parse(r io.Reader, number string) ([]shop.TrackingEvent, string, error) {
+func parseStamps(r io.Reader, number string) ([]tracking.Event, string, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
-		return nil, "", tracking.UpstreamError("invalid_response")
+		return nil, "", upstreamError("invalid_response")
 	}
 	var block *html.Node
 	walk(doc, func(n *html.Node) {
@@ -26,11 +77,11 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, string, error) {
 		}
 	})
 	if block == nil {
-		return nil, "", tracking.UpstreamError("unexpected_markup")
+		return nil, "", upstreamError("unexpected_markup")
 	}
 	var identity, carrier, summary, heading string
 	delivered := false
-	var events []shop.TrackingEvent
+	var events []tracking.Event
 	incomplete := false
 	walk(block, func(n *html.Node) {
 		if hasClass(n, "tracking-number") {
@@ -61,7 +112,7 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, string, error) {
 		if !hasClass(n, "event") {
 			return
 		}
-		var event shop.TrackingEvent
+		var event tracking.Event
 		walk(n, func(field *html.Node) {
 			switch {
 			case hasClass(field, "event_time"):
@@ -79,13 +130,13 @@ func parse(r io.Reader, number string) ([]shop.TrackingEvent, string, error) {
 		events = append(events, event)
 	})
 	if identity != number || !strings.EqualFold(carrier, "USPS") {
-		return nil, "", tracking.UpstreamError("shipment_mismatch")
+		return nil, "", upstreamError("shipment_mismatch")
 	}
 	if incomplete {
-		return nil, "", tracking.UpstreamError("invalid_response")
+		return nil, "", upstreamError("invalid_response")
 	}
 	if len(events) == 0 {
-		return nil, "", tracking.UpstreamError("history_unavailable")
+		return nil, "", upstreamError("history_unavailable")
 	}
 	// The table omits times. Only attach the headline's local time when its date
 	// matches the newest row; never manufacture times for older scans.
