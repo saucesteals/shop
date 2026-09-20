@@ -158,7 +158,7 @@ shop track <tracking-number>
 shop track <tracking-number> | jq '{trackingNumber, source, latest: .events[0], url}'
 ```
 
-Supported formats are USPS, standard UPS, 12- or 15-digit FedEx numbers, and GOFO US waybills (`GFUS` followed by 14 digits). On `not_supported`, explain that the number's format is unsupported; do not treat it as proof that the shipment does not exist. Provider failures are returned without switching sources.
+Supported formats are USPS, standard UPS, 12- or 15-digit FedEx numbers, GOFO US waybills (`GFUS` followed by 14 digits), and Yanwen Express waybills (`YWE` followed by 14 digits). On `not_supported`, explain that the number's format is unsupported; do not treat it as proof that the shipment does not exist. Provider failures are returned without switching sources.
 
 Response: `trackingNumber`, `source`, `url`, `fetchedAt`, `freshness`, and `events[]` with `date`, optional `time`, `description`, and optional `location`.
 
