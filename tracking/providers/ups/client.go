@@ -1,10 +1,12 @@
-package providers
+// Package ups implements the UPS tracking client.
+package ups
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"html"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -19,18 +21,33 @@ import (
 
 const upsOrigin = "https://www.ups.com"
 
-// upsClient retrieves history in a new anonymous session for each lookup.
-type upsClient struct {
-	http *httpClient
+const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+
+// Client retrieves history in a new anonymous session for each lookup.
+type Client struct {
+	http *http.Client
 }
 
+// New constructs a client using standard net/http configuration.
+// A nil client uses a 30-second timeout. Configure supplied clients before use.
+// The caller owns the supplied transport.
+func New(client *http.Client) *Client {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	return &Client{http: client}
+}
+
+var _ tracking.Provider = (*Client)(nil)
+
 // Carriers declares the delivery networks handled by this provider.
-func (c *upsClient) Carriers() []tracking.Carrier {
+func (c *Client) Carriers() []tracking.Carrier {
 	return []tracking.Carrier{tracking.UPS}
 }
 
 // Track retrieves scans without retaining cookies or account information.
-func (c *upsClient) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
+func (c *Client) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
 	number, err := tracking.Number(number)
 	if err != nil {
 		return nil, err
@@ -42,12 +59,13 @@ func (c *upsClient) Track(ctx context.Context, number string) (*tracking.Snapsho
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrInternal, "create tracking session")
 	}
-	client := c.http.withCookies(jar)
+	client := *c.http
+	client.Jar = jar
 	trackingURL := upsOrigin + "/track?" + url.Values{
 		"loc":      {"en_US"},
 		"tracknum": {strings.ToUpper(number)},
 	}.Encode()
-	if _, err := upsRequest(ctx, client, trackingURL, nil, ""); err != nil {
+	if _, err := request(ctx, &client, trackingURL, nil, ""); err != nil {
 		return nil, err
 	}
 	page, _ := url.Parse(trackingURL)
@@ -76,7 +94,7 @@ func (c *upsClient) Track(ctx context.Context, number string) (*tracking.Snapsho
 	if err != nil {
 		return nil, shop.Errorf(shop.ErrInternal, "encode tracking request")
 	}
-	body, err := upsRequest(ctx, client, "https://webapis.ups.com/track/api/Track/GetStatus?loc=en_US", payload, token)
+	body, err := request(ctx, &client, "https://webapis.ups.com/track/api/Track/GetStatus?loc=en_US", payload, token)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +114,7 @@ func (c *upsClient) Track(ctx context.Context, number string) (*tracking.Snapsho
 	}, nil
 }
 
-func upsRequest(ctx context.Context, client *httpClient, endpoint string, payload []byte, token string) ([]byte, error) {
+func request(ctx context.Context, client *http.Client, endpoint string, payload []byte, token string) ([]byte, error) {
 	method := http.MethodGet
 	if payload != nil {
 		method = http.MethodPost
@@ -116,7 +134,27 @@ func upsRequest(ctx context.Context, client *httpClient, endpoint string, payloa
 		req.Header.Set("X-XSRF-TOKEN", token)
 	}
 
-	return client.do(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrNetwork, "carrier tracking request failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, shop.Errorf(shop.ErrRateLimited, "tracking source rate limited").WithDetails(map[string]any{"retryAfter": resp.Header.Get("Retry-After")})
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
+	}
+	const maxBody = 2 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrNetwork, "read tracking response")
+	}
+	if len(body) > maxBody {
+		return nil, upstreamError("response_too_large")
+	}
+
+	return body, nil
 }
 
 type upsResponse struct {
@@ -182,4 +220,9 @@ func parseUPS(body []byte, number string) ([]tracking.Event, string, error) {
 	}
 
 	return nil, "", upstreamError("history_unavailable")
+}
+
+// upstreamError identifies an unusable tracking response without leaking its contents.
+func upstreamError(reason string) *shop.Error {
+	return shop.Errorf(shop.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
 }

@@ -1,4 +1,5 @@
-package providers
+// Package stamps implements the Stamps tracking client.
+package stamps
 
 import (
 	"bytes"
@@ -16,18 +17,33 @@ import (
 	"github.com/saucesteals/shop/tracking"
 )
 
-// stampsClient retrieves tracking without accounts or persistent sessions.
-type stampsClient struct {
-	http *httpClient
+const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+
+// Client retrieves tracking without accounts or persistent sessions.
+type Client struct {
+	http *http.Client
 }
 
+// New constructs a client using standard net/http configuration.
+// A nil client uses a 30-second timeout. Configure supplied clients before use.
+// The caller owns the supplied transport.
+func New(client *http.Client) *Client {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	return &Client{http: client}
+}
+
+var _ tracking.Provider = (*Client)(nil)
+
 // Carriers declares the delivery networks handled by this provider.
-func (c *stampsClient) Carriers() []tracking.Carrier {
+func (c *Client) Carriers() []tracking.Carrier {
 	return []tracking.Carrier{tracking.USPS}
 }
 
 // Track reads the current published scan history, which may be cached upstream.
-func (c *stampsClient) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
+func (c *Client) Track(ctx context.Context, number string) (*tracking.Snapshot, error) {
 	number, err := tracking.Number(number)
 	if err != nil {
 		return nil, err
@@ -43,9 +59,24 @@ func (c *stampsClient) Track(ctx context.Context, number string) (*tracking.Snap
 	req.Header.Set("Accept", "text/html")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("User-Agent", userAgent)
-	body, err := c.http.do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, shop.Errorf(shop.ErrNetwork, "carrier tracking request failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, shop.Errorf(shop.ErrRateLimited, "tracking source rate limited").WithDetails(map[string]any{"retryAfter": resp.Header.Get("Retry-After")})
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
+	}
+	const maxBody = 2 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrNetwork, "read tracking response")
+	}
+	if len(body) > maxBody {
+		return nil, upstreamError("response_too_large")
 	}
 	events, estimate, err := parseStamps(bytes.NewReader(body), number)
 	if err != nil {
@@ -199,4 +230,9 @@ func nodeText(n *html.Node) string {
 	})
 
 	return strings.Join(strings.Fields(text.String()), " ")
+}
+
+// upstreamError identifies an unusable tracking response without leaking its contents.
+func upstreamError(reason string) *shop.Error {
+	return shop.Errorf(shop.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
 }

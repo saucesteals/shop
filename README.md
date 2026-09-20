@@ -572,7 +572,7 @@ func refresh(ctx context.Context, configDir string, client *http.Client) (*track
 }
 ```
 
-`tracking` owns shipment types, the carrier registry, and the saved-shipment ledger, including selection and refresh summaries. `tracking/providers` supplies built-in carrier clients with optional HTTP-client injection. `Registry.Track` performs a lookup without saving it. `Ledger.List` reads all saved records offline; apply `Selection.Select` for the active-shipment view. Batch refresh uses the caller's context and retains per-shipment failures in its result. The caller owns any supplied HTTP transport.
+`tracking` owns shipment types, the carrier registry, and the saved-shipment ledger, including selection and refresh summaries. `tracking/providers` assembles the built-in clients. Each API has its own package (`ups`, `stamps`, `fedex`, `gofo`, `yanwen`) under it, exposing `Client` and `New(*http.Client)`. Clients use standard `net/http` configuration directly; there is no shared HTTP wrapper. `Registry.Track` performs a lookup without saving it. `Ledger.List` reads all saved records offline; apply `Selection.Select` for the active-shipment view. Batch refresh uses the caller's context and retains per-shipment failures in its result. The caller owns any supplied HTTP transport.
 
 Library callers use `shop.Open`, `provider/amazon`, and the public tracking packages directly. The old `shop.Resolve`/`SetResolver` callback, root tracking types, and `shop/amazon` import wrapper are removed. CLI commands and saved JSON formats are unchanged.
 

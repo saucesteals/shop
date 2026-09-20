@@ -1,9 +1,11 @@
-package providers
+// Package fedex implements the FedEx tracking client.
+package fedex
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -22,18 +24,33 @@ const (
 	fedexClientVersion = "Deliveries/6.0.2.1975"
 )
 
-// fedexClient retrieves shipment scans using a per-lookup guest token.
-type fedexClient struct {
-	http *httpClient
+const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+
+// Client retrieves shipment scans using a per-lookup guest token.
+type Client struct {
+	http *http.Client
 }
 
+// New constructs a client using standard net/http configuration.
+// A nil client uses a 30-second timeout. Configure supplied clients before use.
+// The caller owns the supplied transport.
+func New(client *http.Client) *Client {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	return &Client{http: client}
+}
+
+var _ tracking.Provider = (*Client)(nil)
+
 // Carriers declares the delivery networks handled by this provider.
-func (c *fedexClient) Carriers() []tracking.Carrier {
+func (c *Client) Carriers() []tracking.Carrier {
 	return []tracking.Carrier{tracking.FedEx}
 }
 
 // Track retrieves scans without persisting session credentials.
-func (c *fedexClient) Track(ctx context.Context, input string) (*tracking.Snapshot, error) {
+func (c *Client) Track(ctx context.Context, input string) (*tracking.Snapshot, error) {
 	number, err := tracking.Number(input)
 	if err != nil {
 		return nil, err
@@ -62,7 +79,7 @@ func (c *fedexClient) Track(ctx context.Context, input string) (*tracking.Snapsh
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Locale", "en_US")
 	req.Header.Set("Authorization", "Bearer "+token)
-	body, err := c.http.do(req)
+	body, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +99,7 @@ func (c *fedexClient) Track(ctx context.Context, input string) (*tracking.Snapsh
 	}, nil
 }
 
-func (c *fedexClient) session(ctx context.Context) (string, error) {
+func (c *Client) session(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fedexSessionURL, nil)
 	if err != nil {
 		return "", shop.Errorf(shop.ErrInternal, "create tracking session request")
@@ -91,7 +108,7 @@ func (c *fedexClient) session(ctx context.Context) (string, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("X-Deliveries-P", "0")
-	body, err := c.http.do(req)
+	body, err := c.do(req)
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +240,8 @@ func parseFedEx(body []byte, number string) ([]tracking.Event, string, error) {
 		start, startErr := time.Parse(time.RFC3339, detail.Estimate.Window.Starts)
 		end, endErr := time.Parse(time.RFC3339, detail.Estimate.Window.Ends)
 		if startErr == nil && endErr == nil && !end.Before(start) {
-			estimate = deliveryWindow(start, end)
+			const layout = "Mon, Jan 2, 2006 3:04 PM -07:00"
+			estimate = start.Format(layout) + " – " + end.Format(layout)
 		}
 		if estimate == "" {
 			for _, kind := range []string{"ESTIMATED_DELIVERY", "SCHEDULED_DELIVERY"} {
@@ -245,4 +263,33 @@ func parseFedEx(body []byte, number string) ([]tracking.Event, string, error) {
 	}
 
 	return events, estimate, nil
+}
+
+func (c *Client) do(req *http.Request) ([]byte, error) {
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrNetwork, "carrier tracking request failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, shop.Errorf(shop.ErrRateLimited, "tracking source rate limited").WithDetails(map[string]any{"retryAfter": resp.Header.Get("Retry-After")})
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, upstreamError("http_error").WithDetails(map[string]any{"status": resp.StatusCode})
+	}
+	const maxBody = 2 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrNetwork, "read tracking response")
+	}
+	if len(body) > maxBody {
+		return nil, upstreamError("response_too_large")
+	}
+
+	return body, nil
+}
+
+// upstreamError identifies an unusable tracking response without leaking its contents.
+func upstreamError(reason string) *shop.Error {
+	return shop.Errorf(shop.ErrUpstream, "carrier did not provide usable history").WithDetails(map[string]any{"reason": reason})
 }
