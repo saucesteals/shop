@@ -26,6 +26,7 @@ type CLI struct {
 	store      string
 	jsonOutput bool
 	pretty     bool
+	text       bool
 	configPath string
 	timeout    time.Duration
 }
@@ -41,6 +42,12 @@ func New() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Explicit text selection overrides saved JSON defaults, but conflicting
+			// command-line modes are rejected before any operation runs.
+			if c.text && ((cmd.Flags().Changed("json") && c.jsonOutput) || (cmd.Flags().Changed("pretty") && c.pretty)) {
+				return shop.Errorf(shop.ErrInvalidInput, "--text cannot be combined with --json or --pretty")
+			}
+
 			// Skip app init for commands that don't need it.
 			if cmd.Name() == "help" || cmd.Name() == "completion" {
 				return nil
@@ -95,6 +102,7 @@ func New() *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("store", c.completeStoreNames)
 	pf.BoolVar(&c.jsonOutput, "json", false, "force compact JSON output")
 	pf.BoolVar(&c.pretty, "pretty", false, "force pretty-printed JSON")
+	pf.BoolVar(&c.text, "text", false, "human-readable output (not for parsing)")
 	pf.StringVar(&c.configPath, "config", "", "config directory path")
 	pf.DurationVar(&c.timeout, "timeout", 30*time.Second, "request timeout")
 
@@ -124,19 +132,14 @@ func New() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command and handles exit codes via the run() pattern
-// so deferred functions execute on all exit paths.
+// Execute runs the root command and preserves the structured error exit codes.
 func Execute() {
-	if err := run(); err != nil {
-		code := outputError(err)
+	root := New()
+	if err := root.Execute(); err != nil {
+		text, _ := root.PersistentFlags().GetBool("text")
+		code := outputError(err, text)
 		os.Exit(code)
 	}
-}
-
-func run() error {
-	root := New()
-
-	return root.Execute()
 }
 
 // resolveStore validates the --store flag, creates a timeout context, and

@@ -29,10 +29,10 @@ func (c *CLI) newStoresCmd() *cobra.Command {
 			if provider != "" {
 				entries := registry.FilterByProvider(provider)
 
-				return c.outputJSON(entries)
+				return c.output(entries)
 			}
 
-			return c.outputJSON(registry.Stores)
+			return c.output(registry.Stores)
 		},
 	}
 
@@ -69,7 +69,7 @@ func (c *CLI) newStoreInfoCmd() *cobra.Command {
 				Capabilities: s.Capabilities(),
 			}
 
-			return c.outputJSON(out)
+			return c.output(out)
 		},
 	}
 }
@@ -88,7 +88,7 @@ func (c *CLI) newCapabilitiesCmd() *cobra.Command {
 
 			caps := s.Capabilities()
 
-			return c.outputJSON(caps)
+			return c.output(caps)
 		},
 	}
 }

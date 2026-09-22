@@ -56,7 +56,7 @@ func (c *CLI) newCartAddCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 
@@ -84,7 +84,7 @@ func (c *CLI) newCartRemoveCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 }
@@ -106,7 +106,7 @@ func (c *CLI) newCartViewCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 }
@@ -128,7 +128,7 @@ func (c *CLI) newCartClearCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 }

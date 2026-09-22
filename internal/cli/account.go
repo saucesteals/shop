@@ -19,7 +19,7 @@ func (c *CLI) newAddressesCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(addresses)
+			return c.output(addresses)
 		},
 	}
 }
@@ -41,7 +41,7 @@ func (c *CLI) newPaymentsCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(methods)
+			return c.output(methods)
 		},
 	}
 }

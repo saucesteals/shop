@@ -34,7 +34,7 @@ func (c *CLI) newTrackCmd() *cobra.Command {
 				return shipmentError(err, shop.ErrNetwork)
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 	track.AddCommand(c.newTrackAddCmd(), c.newTrackListCmd(), c.newTrackRemoveCmd(), c.newTrackRefreshCmd())
@@ -55,7 +55,7 @@ func (c *CLI) newTrackAddCmd() *cobra.Command {
 				return shipmentError(err, shop.ErrConfigError)
 			}
 
-			return c.outputJSON(saved)
+			return c.output(saved)
 		},
 	}
 	cmd.Flags().StringVar(&entry.Label, "label", "", "descriptive label")
@@ -105,7 +105,7 @@ func (c *CLI) newTrackListCmd() *cobra.Command {
 				return shipmentError(err, shop.ErrConfigError)
 			}
 
-			return c.outputJSON(entries)
+			return c.output(entries)
 		},
 	}
 	flags.bind(cmd)
@@ -123,9 +123,7 @@ func (c *CLI) newTrackRemoveCmd() *cobra.Command {
 				return shipmentError(err, shop.ErrConfigError)
 			}
 
-			return c.outputJSON(struct {
-				Removed bool `json:"removed"`
-			}{Removed: true})
+			return c.output(removalResult{Removed: true})
 		},
 	}
 }
@@ -159,7 +157,7 @@ func (c *CLI) newTrackRefreshCmd() *cobra.Command {
 				}
 			}
 			summary := summarizeRefresh(results)
-			if err := c.outputJSON(summary); err != nil {
+			if err := c.output(summary); err != nil {
 				return err
 			}
 			if refreshErr != nil {

@@ -19,9 +19,12 @@ func isTTY(f *os.File) bool {
 	return info.Mode()&os.ModeCharDevice != 0
 }
 
-// outputJSON writes v as JSON to stdout. Pretty-prints if the CLI is
-// configured for it (explicit flag or TTY detection).
-func (c *CLI) outputJSON(v any) error {
+// output writes a command result in the selected presentation format.
+func (c *CLI) output(v any) error {
+	if c.text {
+		return writeText(os.Stdout, v)
+	}
+
 	pretty := c.pretty || (!c.jsonOutput && isTTY(os.Stdout))
 
 	var data []byte
@@ -40,15 +43,24 @@ func (c *CLI) outputJSON(v any) error {
 	return err
 }
 
-// outputError writes a structured error to stderr and returns the
-// appropriate exit code. Pretty-prints when stderr is a TTY.
-func outputError(err error) int {
+// outputError writes an error in the selected format to stderr and returns
+// the same exit code regardless of presentation.
+func outputError(err error, text bool) int {
 	var shopErr *shop.Error
 	if !errors.As(err, &shopErr) {
 		shopErr = trackingError(err)
 		if shopErr == nil {
 			shopErr = shop.Errorf(shop.ErrInternal, "%s", err)
 		}
+	}
+
+	if text {
+		fmt.Fprintf(os.Stderr, "Error [%s]: %s\n", cleanText(string(shopErr.Code)), cleanText(shopErr.Message))
+		if retry, ok := shopErr.Details["retryAfter"]; ok {
+			fmt.Fprintf(os.Stderr, "Retry after: %s seconds\n", cleanText(fmt.Sprint(retry)))
+		}
+
+		return shop.ExitCode(shopErr)
 	}
 
 	pretty := isTTY(os.Stderr)

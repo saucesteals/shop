@@ -85,7 +85,7 @@ func (c *CLI) newConfigSetCmd() *cobra.Command {
 				return shop.Errorf(shop.ErrConfigError, "save config: %v", err)
 			}
 
-			return c.outputJSON(map[string]string{"key": key, "value": value})
+			return c.output(map[string]string{"key": key, "value": value})
 		},
 	}
 }
@@ -120,7 +120,7 @@ func (c *CLI) newConfigGetCmd() *cobra.Command {
 				value = "(not set)"
 			}
 
-			return c.outputJSON(map[string]string{"key": key, "value": value})
+			return c.output(map[string]string{"key": key, "value": value})
 		},
 	}
 }
@@ -147,7 +147,7 @@ func (c *CLI) newConfigListCmd() *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(os.Stderr, "config: %s/config.json\n", dir)
 
-			return c.outputJSON(values)
+			return c.output(values)
 		},
 	}
 }
