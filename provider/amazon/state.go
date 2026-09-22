@@ -90,8 +90,11 @@ func (s *Store) saveOrder(order *shop.Order, purchaseID string) error {
 	state := orderState{
 		OrderID:    order.OrderID,
 		PurchaseID: purchaseID,
-		Total:      &order.Total,
 		PlacedAt:   order.PlacedAt,
+	}
+
+	if order.Total.Currency != "" {
+		state.Total = &order.Total
 	}
 
 	data, err := json.MarshalIndent(state, "", "  ")

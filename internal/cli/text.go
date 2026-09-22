@@ -38,6 +38,9 @@ func writeText(w io.Writer, value any) error {
 		out.variants(v)
 	case *shop.CartContents:
 		out.line("Cart")
+		if len(v.Items) == 0 {
+			out.line("No items")
+		}
 		out.cartItems(v.Items)
 		out.field("Subtotal", money(&v.Subtotal))
 	case *shop.CheckoutResult:
@@ -189,8 +192,8 @@ func yesNo(value bool) string {
 // Money stays integer-based, including negative values and math.MinInt64.
 // Unknown currencies retain explicit minor units instead of guessing a scale.
 func money(value *shop.Money) string {
-	if value == nil {
-		return "Not available"
+	if value == nil || value.Currency == "" {
+		return "Not provided"
 	}
 	var decimals int
 	switch value.Currency {
