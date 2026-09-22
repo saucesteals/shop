@@ -145,12 +145,13 @@ func (o *textOutput) variants(result *shop.VariantsResult) {
 }
 
 func (o *textOutput) cartItems(items []shop.CartEntry) {
-	if len(items) == 0 {
-		o.line("No items")
-	}
 	for _, item := range items {
 		o.section()
-		o.line(fmt.Sprintf("%d x %s", item.Quantity, item.Product.Title))
+		quantity := "Quantity not provided"
+		if item.Quantity > 0 {
+			quantity = fmt.Sprintf("%d x", item.Quantity)
+		}
+		o.line(quantity + " " + nonempty(item.Product.Title, item.Product.ID))
 		o.field("ID", item.Product.ID)
 		o.field("Unit price", money(item.Product.Price))
 		o.availability(item.Product.Availability)
@@ -161,6 +162,9 @@ func (o *textOutput) cartItems(items []shop.CartEntry) {
 func (o *textOutput) checkout(result *shop.CheckoutResult) {
 	o.line("Checkout preview - no order placed")
 	o.field("Checkout ID", result.CheckoutID)
+	if len(result.Items) == 0 {
+		o.field("Items", "Not provided by the checkout response")
+	}
 	o.cartItems(result.Items)
 	o.field("Subtotal", money(&result.Subtotal))
 	o.field("Shipping", money(&result.Shipping))
@@ -188,6 +192,9 @@ func (o *textOutput) order(order *shop.Order) {
 	o.line("Order " + order.OrderID)
 	o.field("Status", order.Status)
 	o.field("Placed", order.PlacedAt)
+	if len(order.Items) == 0 {
+		o.field("Items", "Not provided by the order confirmation")
+	}
 	o.cartItems(order.Items)
 	o.field("Total", money(&order.Total))
 	o.field("Expected delivery", order.EstimatedDelivery)

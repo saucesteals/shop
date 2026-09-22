@@ -222,14 +222,11 @@ func (s *Store) PlaceOrder(ctx context.Context, checkoutID string) (*shop.Order,
 	// Sign succeeded — clean up checkout, persist order.
 	_ = s.deleteCheckout(checkoutID)
 
-	order := &shop.Order{
-		OrderID:  ordersResp.Orders[0].ID,
-		Status:   "placed",
-		PlacedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-
-	if signResp.PurchaseTotals != nil && signResp.PurchaseTotals.PurchaseTotal != nil {
-		order.Total = currencyAmount(signResp.PurchaseTotals.PurchaseTotal.Amount, s.currency)
+	order := mapSignedOrder(ordersResp.Orders[0].ID, &signResp, s.handle, s.currency)
+	// The signing response describes the whole purchase. Do not attach its
+	// item list to just one order when Amazon split the purchase into orders.
+	if len(ordersResp.Orders) > 1 {
+		order.Items = nil
 	}
 
 	_ = s.saveOrder(order, checkoutID)
@@ -455,8 +452,8 @@ func mapCartItemsToEntries(items []tvssCartItem, domain, currency string) []shop
 // (numeric string like "8.99") and the embedded CurrencyCode when available,
 // falling back to the store's currency.
 func currencyAmount(c *tvssCurrency, fallbackCurrency string) shop.Money {
-	if c == nil {
-		return shop.Money{Currency: fallbackCurrency}
+	if c == nil || strings.TrimSpace(c.Amount) == "" {
+		return shop.Money{}
 	}
 
 	cur := c.CurrencyCode
@@ -473,11 +470,14 @@ func mapCheckoutResult(sess *purchaseSession, domain, currency string) *shop.Che
 
 	cr := &shop.CheckoutResult{
 		CheckoutID: resp.PurchaseID,
-		Discount:   shop.Money{Currency: currency},
 	}
 
-	// Items come from the cart — the initiate response doesn't include them.
+	// Prefer the cart items captured during checkout; confirmation responses
+	// may instead supply their own line items.
 	cr.Items = mapCartItemsToEntries(sess.CartItems, domain, currency)
+	if len(cr.Items) == 0 && resp.LineItems != nil {
+		cr.Items = mapPurchaseLineItems(resp.LineItems.LineItems, domain, currency)
+	}
 
 	// Map totals — match on Type codes, not display strings.
 	if resp.PurchaseTotals != nil {
@@ -589,4 +589,45 @@ func mapCheckoutResult(sess *purchaseSession, domain, currency string) *shop.Che
 	}
 
 	return cr
+}
+
+// mapSignedOrder uses only confirmation data; it does not substitute a stale
+// cart or checkout estimate for fields Amazon omitted after signing.
+func mapSignedOrder(id string, response *tvssPurchaseResponse, domain, currency string) *shop.Order {
+	summary := mapCheckoutResult(&purchaseSession{tvssPurchaseResponse: *response}, domain, currency)
+
+	return &shop.Order{
+		OrderID:           id,
+		Status:            "placed",
+		PlacedAt:          time.Now().UTC().Format(time.RFC3339),
+		Items:             summary.Items,
+		Total:             summary.Total,
+		ShippingAddress:   summary.ShippingAddress,
+		PaymentMethod:     summary.PaymentMethod,
+		EstimatedDelivery: summary.EstimatedDelivery,
+	}
+}
+
+func mapPurchaseLineItems(items []tvssLineItem, domain, currency string) []shop.CartEntry {
+	entries := make([]shop.CartEntry, 0, len(items))
+	for _, item := range items {
+		entry := shop.CartEntry{
+			Product: shop.Product{
+				ID:    item.ASIN,
+				Title: item.Title,
+				Brand: item.ByLine,
+				URL:   productURL(domain, item.ASIN),
+			},
+		}
+		if item.Quantity != nil {
+			entry.Quantity = *item.Quantity
+		}
+		if item.Price != "" {
+			price := toMoney(item.Price, currency)
+			entry.Product.Price = &price
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries
 }
