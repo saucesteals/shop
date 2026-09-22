@@ -224,9 +224,10 @@ func (s *Store) PlaceOrder(ctx context.Context, checkoutID string) (*shop.Order,
 
 	order := mapSignedOrder(ordersResp.Orders[0].ID, &signResp, s.handle, s.currency)
 	// The signing response describes the whole purchase. Do not attach its
-	// item list to just one order when Amazon split the purchase into orders.
+	// item list or destination to one order when Amazon split the purchase.
 	if len(ordersResp.Orders) > 1 {
 		order.Items = nil
+		order.ShippingAddress = nil
 	}
 
 	_ = s.saveOrder(order, checkoutID)
@@ -595,6 +596,9 @@ func mapCheckoutResult(sess *purchaseSession, domain, currency string) *shop.Che
 // cart or checkout estimate for fields Amazon omitted after signing.
 func mapSignedOrder(id string, response *tvssPurchaseResponse, domain, currency string) *shop.Order {
 	summary := mapCheckoutResult(&purchaseSession{tvssPurchaseResponse: *response}, domain, currency)
+	if response.Destinations != nil && len(response.Destinations.Destinations) > 1 {
+		summary.ShippingAddress = nil
+	}
 
 	return &shop.Order{
 		OrderID:           id,
@@ -622,7 +626,13 @@ func mapPurchaseLineItems(items []tvssLineItem, domain, currency string) []shop.
 		if item.Quantity != nil {
 			entry.Quantity = *item.Quantity
 		}
-		if item.Price != "" {
+		if item.LineItemPrice != nil {
+			price := currencyAmount(item.LineItemPrice.PriceToPay, currency)
+			if price.Currency != "" {
+				entry.Product.Price = &price
+			}
+		}
+		if entry.Product.Price == nil && strings.TrimSpace(string(item.Price)) != "" {
 			price := toMoney(item.Price, currency)
 			entry.Product.Price = &price
 		}
