@@ -56,7 +56,7 @@ func (c *CLI) newSearchCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 

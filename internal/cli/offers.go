@@ -35,7 +35,7 @@ func (c *CLI) newOffersCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 

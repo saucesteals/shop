@@ -10,7 +10,9 @@ description: >
 
 # shop
 
-All output JSON to stdout, errors JSON to stderr. Pipe with `jq`.
+Data commands default to JSON on stdout, with JSON errors on stderr. Pipe with `jq`.
+Use `--json` for machine parsing, including when `SHOP_OUTPUT=text` is set. `--text` is a human-readable display mode, not
+a stable parsing interface; it also formats errors as text without changing exit codes.
 
 **All prices are cents** (minor units). $29.99 = 2999. JPY = whole yen.
 
@@ -42,11 +44,16 @@ On `auth_required` (exit 10) or `auth_expired` (exit 11), re-run login flow.
 -s, --store <name>   # target store (default: config or $SHOP_STORE)
 --json               # force compact JSON
 --pretty             # force pretty JSON
+--text               # human-readable output; incompatible with --json/--pretty
 --timeout <dur>      # request timeout (default 30s)
 --config <path>      # config and local state directory
 ```
 
 Set a default store: `shop config set defaults.store amazon`
+
+`SHOP_OUTPUT=text` selects human-readable output by default; `json` and `pretty`
+are also supported. Explicit output flags override the environment, which overrides
+saved JSON formatting preferences.
 
 ## Commands
 

@@ -19,7 +19,7 @@ func (c *CLI) newProductCmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(product)
+			return c.output(product)
 		},
 	}
 }

@@ -34,7 +34,7 @@ $ shop search "sony wf-1000xm5" | jq '.products[0] | {title, price, rating}'
 }
 ```
 
-Every command outputs structured JSON. Same interface regardless of store. Pipe to `jq`, feed to scripts, build automations.
+Commands output structured JSON by default. Same interface regardless of store. Pipe to `jq`, feed to scripts, build automations — or use `--text` for a human-readable view.
 
 ---
 
@@ -360,7 +360,7 @@ Tracking supports USPS, standard UPS, 12- or 15-digit FedEx numbers, GOFO US way
 
 Results may be cached. `fetchedAt` is the retrieval time, not the time the carrier last checked the shipment; `freshness` remains `unknown`. Event times preserve timezone information when supplied. Shop does not start background monitoring.
 
-`--timeout`, `--json`, `--pretty`, and `--config` apply. `--store` does not.
+`--timeout`, `--json`, `--pretty`, `--text`, and `--config` apply. `--store` does not.
 
 #### Refresh summaries
 
@@ -397,6 +397,7 @@ shop capabilities                     # What the store supports
 - `-s, --store` — Target store (name or domain). Default: config value or `SHOP_STORE` env.
 - `--json` — Force compact JSON output
 - `--pretty` — Force pretty-printed JSON output
+- `--text` — Human-readable output (cannot be combined with `--json` or `--pretty`)
 - `--config` — Config directory path (default `~/.config/shop/`)
 - `--timeout` — Request timeout (default `30s`)
 
@@ -404,7 +405,52 @@ shop capabilities                     # What the store supports
 
 ## Output Format
 
-All commands output **JSON to stdout**. Pretty-printed when interactive, compact when piped — override with `--json` or `--pretty`.
+Data commands output **JSON to stdout by default**: pretty-printed when interactive,
+compact when piped. Override with `--json` or `--pretty`. Existing JSON fields,
+exit codes, and saved state are unchanged.
+
+Use `--text` for plain, human-readable output. It works even when redirected. Set an environment default in your shell:
+
+```bash
+export SHOP_OUTPUT=text
+```
+
+`SHOP_OUTPUT` accepts `text`, `json` (compact), or `pretty` (indented JSON).
+Precedence is explicit output flags, then `SHOP_OUTPUT`, then saved JSON
+formatting preferences. For example, `shop track list --json` still emits JSON
+when `SHOP_OUTPUT=text`. An explicit false flag such as `--text=false` disables
+the environment/config output default for that invocation. Unset or empty
+`SHOP_OUTPUT` keeps the existing behavior; invalid values are rejected unless
+an explicit output flag overrides them. Help, completion,
+and `shop skill` keep their native output.
+
+```bash
+shop search "coffee" --text
+shop product <product-id> --text
+shop cart view --text
+shop track list --text
+shop track refresh --text
+```
+
+Text views show product IDs and links, prices with currency codes, pagination
+hints, checkout totals and warnings, and shipment estimates separately from scan
+times. Failed refreshes identify the previous saved data as not refreshed.
+Empty collections are explicit. No colors, terminal control sequences, or
+terminal-width-dependent layouts are emitted.
+
+For example, a saved shipment with no scans yet:
+
+```text
+Saved shipments (1)
+
+Desk equipment
+  Tracking: <tracking-number>
+  Merchant: Example Store
+  Status: Not refreshed yet
+```
+
+Text is a display format, not a stable scripting interface. Use JSON for all
+fields, including provider-specific attributes, and for parsing.
 
 ```bash
 # Pretty in terminal
@@ -425,11 +471,17 @@ All prices use **minor units** (cents). Never floating point.
 { "amount": 2999, "currency": "USD" }
 ```
 
-`2999` = $29.99. For JPY, minor units = whole yen.
+`2999` = $29.99. For JPY, minor units = whole yen. Text output displays these as
+`USD 29.99` and `JPY 2999`, respectively. Unrecognized currency codes retain an
+explicit minor-unit amount rather than assuming a decimal scale.
 
 ### Errors
 
-Structured JSON on stderr with typed error codes:
+Errors use structured JSON on stderr by default. With `--text`, errors are plain
+text on stderr and retain the same exit codes. A partially failed tracking
+refresh still prints its summary to stdout before the error.
+
+Default error format:
 
 ```json
 {

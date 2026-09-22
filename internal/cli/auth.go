@@ -49,7 +49,7 @@ Examples:
 				return err
 			}
 
-			return c.outputJSON(result)
+			return c.output(result)
 		},
 	}
 }
@@ -78,7 +78,7 @@ SHOP_STORE env var, or the config default.`,
 				return err
 			}
 
-			return c.outputJSON(map[string]bool{"success": true})
+			return c.output(map[string]bool{"success": true})
 		},
 	}
 }
@@ -100,7 +100,7 @@ func (c *CLI) newWhoAmICmd() *cobra.Command {
 				return err
 			}
 
-			return c.outputJSON(info)
+			return c.output(info)
 		},
 	}
 }

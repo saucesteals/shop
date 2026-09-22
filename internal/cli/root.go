@@ -26,6 +26,7 @@ type CLI struct {
 	store      string
 	jsonOutput bool
 	pretty     bool
+	text       bool
 	configPath string
 	timeout    time.Duration
 }
@@ -41,6 +42,10 @@ func New() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := c.selectOutput(cmd); err != nil {
+				return err
+			}
+
 			// Skip app init for commands that don't need it.
 			if cmd.Name() == "help" || cmd.Name() == "completion" {
 				return nil
@@ -56,10 +61,8 @@ func New() *cobra.Command {
 			}
 			c.config = cfg
 			c.configPath = dir
-			if !cmd.Flags().Changed("json") {
+			if !outputFlagsChanged(cmd) && os.Getenv("SHOP_OUTPUT") == "" {
 				c.jsonOutput = cfg.Defaults.Output.JSON
-			}
-			if !cmd.Flags().Changed("pretty") {
 				c.pretty = cfg.Defaults.Output.Pretty
 			}
 
@@ -95,6 +98,7 @@ func New() *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("store", c.completeStoreNames)
 	pf.BoolVar(&c.jsonOutput, "json", false, "force compact JSON output")
 	pf.BoolVar(&c.pretty, "pretty", false, "force pretty-printed JSON")
+	pf.BoolVar(&c.text, "text", false, "human-readable output (not for parsing)")
 	pf.StringVar(&c.configPath, "config", "", "config directory path")
 	pf.DurationVar(&c.timeout, "timeout", 30*time.Second, "request timeout")
 
@@ -124,19 +128,17 @@ func New() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command and handles exit codes via the run() pattern
-// so deferred functions execute on all exit paths.
+// Execute runs the root command and preserves the structured error exit codes.
 func Execute() {
-	if err := run(); err != nil {
-		code := outputError(err)
+	root := New()
+	if err := root.Execute(); err != nil {
+		text, _ := root.PersistentFlags().GetBool("text")
+		if !outputFlagsChanged(root) {
+			text = os.Getenv("SHOP_OUTPUT") == "text"
+		}
+		code := outputError(err, text)
 		os.Exit(code)
 	}
-}
-
-func run() error {
-	root := New()
-
-	return root.Execute()
 }
 
 // resolveStore validates the --store flag, creates a timeout context, and
@@ -193,4 +195,35 @@ func (c *CLI) completeStoreNames(_ *cobra.Command, _ []string, _ string) ([]stri
 	}
 
 	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+// outputFlagsChanged includes explicit false values: --text=false opts out of
+// the environment default as well as --text=true opting into it.
+func outputFlagsChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("text") || cmd.Flags().Changed("json") || cmd.Flags().Changed("pretty")
+}
+
+// selectOutput applies flags > environment > saved defaults. Saved defaults are
+// loaded separately so errors reading config can still use the requested mode.
+func (c *CLI) selectOutput(cmd *cobra.Command) error {
+	if outputFlagsChanged(cmd) {
+		if c.text && (c.jsonOutput || c.pretty) {
+			return shop.Errorf(shop.ErrInvalidInput, "--text cannot be combined with --json or --pretty")
+		}
+
+		return nil
+	}
+	switch os.Getenv("SHOP_OUTPUT") {
+	case "":
+	case "text":
+		c.text = true
+	case "json":
+		c.jsonOutput = true
+	case "pretty":
+		c.pretty = true
+	default:
+		return shop.Errorf(shop.ErrInvalidInput, "SHOP_OUTPUT must be text, json, or pretty")
+	}
+
+	return nil
 }
