@@ -409,9 +409,19 @@ Data commands output **JSON to stdout by default**: pretty-printed when interact
 compact when piped. Override with `--json` or `--pretty`. Existing JSON fields,
 exit codes, and saved state are unchanged.
 
-Use `--text` for plain, human-readable output. It is an explicit selection, even
-when redirected, and overrides saved JSON formatting preferences. It does not
-change the default output mode or add a persistent setting. Help, completion,
+Use `--text` for plain, human-readable output. It works even when redirected. Set an environment default in your shell:
+
+```bash
+export SHOP_OUTPUT=text
+```
+
+`SHOP_OUTPUT` accepts `text`, `json` (compact), or `pretty` (indented JSON).
+Precedence is explicit output flags, then `SHOP_OUTPUT`, then saved JSON
+formatting preferences. For example, `shop track list --json` still emits JSON
+when `SHOP_OUTPUT=text`. An explicit false flag such as `--text=false` disables
+the environment/config output default for that invocation. Unset or empty
+`SHOP_OUTPUT` keeps the existing behavior; invalid values are rejected unless
+an explicit output flag overrides them. Help, completion,
 and `shop skill` keep their native output.
 
 ```bash

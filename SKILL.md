@@ -11,7 +11,7 @@ description: >
 # shop
 
 Data commands default to JSON on stdout, with JSON errors on stderr. Pipe with `jq`.
-Use `--json` for machine parsing. `--text` is a human-readable display mode, not
+Use `--json` for machine parsing, including when `SHOP_OUTPUT=text` is set. `--text` is a human-readable display mode, not
 a stable parsing interface; it also formats errors as text without changing exit codes.
 
 **All prices are cents** (minor units). $29.99 = 2999. JPY = whole yen.
@@ -50,6 +50,10 @@ On `auth_required` (exit 10) or `auth_expired` (exit 11), re-run login flow.
 ```
 
 Set a default store: `shop config set defaults.store amazon`
+
+`SHOP_OUTPUT=text` selects human-readable output by default; `json` and `pretty`
+are also supported. Explicit output flags override the environment, which overrides
+saved JSON formatting preferences.
 
 ## Commands
 

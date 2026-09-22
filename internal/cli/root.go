@@ -42,10 +42,8 @@ func New() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			// Explicit text selection overrides saved JSON defaults, but conflicting
-			// command-line modes are rejected before any operation runs.
-			if c.text && ((cmd.Flags().Changed("json") && c.jsonOutput) || (cmd.Flags().Changed("pretty") && c.pretty)) {
-				return shop.Errorf(shop.ErrInvalidInput, "--text cannot be combined with --json or --pretty")
+			if err := c.selectOutput(cmd); err != nil {
+				return err
 			}
 
 			// Skip app init for commands that don't need it.
@@ -63,10 +61,8 @@ func New() *cobra.Command {
 			}
 			c.config = cfg
 			c.configPath = dir
-			if !cmd.Flags().Changed("json") {
+			if !outputFlagsChanged(cmd) && os.Getenv("SHOP_OUTPUT") == "" {
 				c.jsonOutput = cfg.Defaults.Output.JSON
-			}
-			if !cmd.Flags().Changed("pretty") {
 				c.pretty = cfg.Defaults.Output.Pretty
 			}
 
@@ -137,6 +133,9 @@ func Execute() {
 	root := New()
 	if err := root.Execute(); err != nil {
 		text, _ := root.PersistentFlags().GetBool("text")
+		if !outputFlagsChanged(root) {
+			text = os.Getenv("SHOP_OUTPUT") == "text"
+		}
 		code := outputError(err, text)
 		os.Exit(code)
 	}
@@ -196,4 +195,35 @@ func (c *CLI) completeStoreNames(_ *cobra.Command, _ []string, _ string) ([]stri
 	}
 
 	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+// outputFlagsChanged includes explicit false values: --text=false opts out of
+// the environment default as well as --text=true opting into it.
+func outputFlagsChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("text") || cmd.Flags().Changed("json") || cmd.Flags().Changed("pretty")
+}
+
+// selectOutput applies flags > environment > saved defaults. Saved defaults are
+// loaded separately so errors reading config can still use the requested mode.
+func (c *CLI) selectOutput(cmd *cobra.Command) error {
+	if outputFlagsChanged(cmd) {
+		if c.text && (c.jsonOutput || c.pretty) {
+			return shop.Errorf(shop.ErrInvalidInput, "--text cannot be combined with --json or --pretty")
+		}
+
+		return nil
+	}
+	switch os.Getenv("SHOP_OUTPUT") {
+	case "":
+	case "text":
+		c.text = true
+	case "json":
+		c.jsonOutput = true
+	case "pretty":
+		c.pretty = true
+	default:
+		return shop.Errorf(shop.ErrInvalidInput, "SHOP_OUTPUT must be text, json, or pretty")
+	}
+
+	return nil
 }
