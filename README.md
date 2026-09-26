@@ -185,6 +185,7 @@ shop search "protein powder"
 shop search "headphones" --sort price_low --min-price 2000 --max-price 15000
 shop search "laptop" --min-rating 4.0 --category Electronics
 shop search "keyboard" --filter brand=Keychron --page 2
+shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 ```
 
 > **Prices are in cents** (minor units). `--min-price 2000` = $20.00.
@@ -199,9 +200,20 @@ shop search "keyboard" --filter brand=Keychron --page 2
 - `--max-price` — Maximum price in minor units (cents)
 - `--min-rating` — Minimum average rating (e.g. `4.0`)
 - `--category` — Category filter (provider-specific)
-- `--filter` — Arbitrary `key=value` filter (repeatable)
+- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city` and `radius`.
 
 </details>
+
+### Facebook Marketplace
+
+Anonymous search and listing details. No login, cart, or checkout.
+
+Results are scoped to a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. `--min-price` and `--max-price` apply. First page only.
+
+```bash
+shop search "desk" --store facebook --filter city=austin --filter radius=15mi
+shop product 2643088989483257 --store facebook
+```
 
 <details>
 <summary><strong>Example output</strong></summary>
