@@ -18,10 +18,14 @@ const (
 )
 
 var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
+var locationSegment = regexp.MustCompile(`^[A-Za-z0-9]{1,40}$`)
+var reservedMarketplaceRoutes = map[string]struct{}{
+	"category": {}, "create": {}, "item": {}, "profile": {}, "search": {}, "you": {},
+}
 
 func marketplaceCity(raw string) (string, error) {
 	slug := strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return unicode.ToLower(r)
 		}
 
@@ -32,6 +36,40 @@ func marketplaceCity(raw string) (string, error) {
 	}
 
 	return slug, nil
+}
+
+// marketplaceLocation accepts either a canonical Facebook Marketplace location
+// segment (a city slug or numeric place ID) or a Marketplace URL containing one.
+// Facebook's location picker uses numeric IDs for many cities and neighborhoods.
+func marketplaceLocation(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", shop.Errorf(shop.ErrInvalidInput, "marketplace location is required")
+	}
+
+	if strings.Contains(value, "://") {
+		u, err := url.Parse(value)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Port() != "" || (u.Hostname() != "facebook.com" && u.Hostname() != "www.facebook.com") {
+			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must be a Facebook Marketplace URL")
+		}
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) < 2 || len(parts) > 3 || !strings.EqualFold(parts[0], "marketplace") {
+			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must include a Marketplace city slug or location ID")
+		}
+		if _, reserved := reservedMarketplaceRoutes[strings.ToLower(parts[1])]; reserved {
+			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must include a Marketplace city slug or location ID")
+		}
+		if len(parts) == 3 && !strings.EqualFold(parts[2], "search") {
+			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must be a Marketplace location or search URL")
+		}
+		value = parts[1]
+	}
+
+	if !locationSegment.MatchString(value) {
+		return "", shop.Errorf(shop.ErrInvalidInput, "marketplace location must be a canonical Facebook city slug, numeric location ID, or Marketplace URL")
+	}
+
+	return strings.ToLower(value), nil
 }
 
 func parseRadiusKm(raw, unit string) (int, error) {
@@ -71,11 +109,20 @@ func parseRadiusKm(raw, unit string) (int, error) {
 	return rounded, nil
 }
 
-func searchCityRadius(filters map[string]string) (string, int, error) {
-	if filters == nil || strings.TrimSpace(filters["city"]) == "" {
-		return "", 0, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires --filter city=<city>")
+func searchLocationRadius(filters map[string]string) (string, int, error) {
+	if filters == nil || (strings.TrimSpace(filters["city"]) == "" && strings.TrimSpace(filters["location"]) == "") {
+		return "", 0, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires --filter location=<Facebook location ID, city slug, or Marketplace URL>")
 	}
-	city, err := marketplaceCity(filters["city"])
+	var location string
+	var err error
+	if strings.TrimSpace(filters["location"]) != "" {
+		if strings.TrimSpace(filters["city"]) != "" {
+			return "", 0, shop.Errorf(shop.ErrInvalidInput, "use only one of the city and location filters")
+		}
+		location, err = marketplaceLocation(filters["location"])
+	} else {
+		location, err = marketplaceCity(filters["city"])
+	}
 	if err != nil {
 		return "", 0, err
 	}
@@ -89,7 +136,7 @@ func searchCityRadius(filters map[string]string) (string, int, error) {
 		return "", 0, shop.Errorf(shop.ErrInvalidInput, "radius_unit requires radius")
 	}
 
-	return city, radiusKm, nil
+	return location, radiusKm, nil
 }
 
 // Search returns the first relevance page for a Marketplace city and radius.
@@ -105,12 +152,12 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	for key := range query.Filters {
 		switch key {
-		case "city", "radius", "radius_unit":
+		case "city", "location", "radius", "radius_unit":
 		default:
 			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
 		}
 	}
-	city, radiusKm, err := searchCityRadius(query.Filters)
+	location, radiusKm, err := searchLocationRadius(query.Filters)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +174,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		}
 		params.Set("maxPrice", strconv.FormatInt(*query.MaxPrice/100, 10))
 	}
-	body, err := s.document(ctx, "/marketplace/"+city+"/search/?"+params.Encode())
+	body, err := s.document(ctx, "/marketplace/"+location+"/search/?"+params.Encode())
 	if err != nil {
 		return nil, err
 	}
