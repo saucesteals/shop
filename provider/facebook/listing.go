@@ -12,9 +12,10 @@ import (
 var listingID = regexp.MustCompile(`^[0-9]+$`)
 
 type listing struct {
-	ID    string `json:"id"`
-	Title string `json:"marketplace_listing_title"`
-	Price struct {
+	ID           string `json:"id"`
+	Title        string `json:"marketplace_listing_title"`
+	CreationTime int64  `json:"creation_time"`
+	Price        struct {
 		Amount   string `json:"amount_with_offset_in_currency"`
 		Currency string `json:"currency"`
 	} `json:"listing_price"`
@@ -91,6 +92,12 @@ func (l *listing) product(assumeUSD bool) (*shop.Product, error) {
 	var attributes map[string]any
 	if location != "" {
 		attributes = map[string]any{"location": location}
+	}
+	if l.CreationTime > 0 {
+		if attributes == nil {
+			attributes = make(map[string]any)
+		}
+		attributes["creationTime"] = l.CreationTime
 	}
 	availability := shop.Availability{Status: shop.AvailabilityUnavailable}
 	switch {
