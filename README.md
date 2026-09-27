@@ -208,12 +208,15 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 
 Anonymous search and listing details. No login, cart, or checkout.
 
-Results are scoped to a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. `--min-price` and `--max-price` apply. First page only.
+Results are scoped to a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. Because search results expose a Marketplace city rather than exact seller coordinates, `shop` applies a best-effort city-center distance check and includes `attributes.distanceKm`. Listings whose city center is outside the requested radius are removed, but the radius is approximate near city boundaries.
 
 ```bash
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi
+shop search "desk" --store facebook --filter city=austin --filter radius=15mi --page 2
 shop product 2643088989483257 --store facebook
 ```
+
+`--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
 
 <details>
 <summary><strong>Example output</strong></summary>

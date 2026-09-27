@@ -68,7 +68,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 
 Flags: `--sort` (relevance|price_low|price_high|rating|newest|best_seller), `--page`, `--page-size`, `--min-price`, `--max-price` (cents), `--min-rating`, `--category`, `--filter key=value` (repeatable)
 
-Facebook Marketplace: `--store facebook --filter city=<slug>` (`austin`, `nyc`, `sanfrancisco`). Optional `--filter radius=` (miles, or `km` suffix). `--min-price` / `--max-price` work. First page only. No cart or checkout.
+Facebook Marketplace: `--store facebook --filter city=<slug>` (`austin`, `nyc`, `sanfrancisco`). Optional `--filter radius=` (miles, or `km` suffix). Search results include `attributes.location` and best-effort city-center `attributes.distanceKm`; exact seller coordinates are not exposed, so radius filtering is approximate near city boundaries. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` caps a page locally without changing cursor boundaries, and `hasMore` mirrors Facebook's next-cursor state. `--min-price` / `--max-price` work. No cart or checkout.
 
 Response: `.products[]` has id, title, price, rating, url, badge, availability. `.hasMore` for pagination.
 

@@ -28,8 +28,12 @@ type listing struct {
 	} `json:"location_text"`
 	Location struct {
 		ReverseGeocode struct {
-			City  string `json:"city"`
-			State string `json:"state"`
+			City     string `json:"city"`
+			State    string `json:"state"`
+			CityPage struct {
+				ID          string `json:"id"`
+				DisplayName string `json:"display_name"`
+			} `json:"city_page"`
 		} `json:"reverse_geocode"`
 	} `json:"location"`
 	Live    *bool `json:"is_live"`
