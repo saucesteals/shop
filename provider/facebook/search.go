@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/saucesteals/shop"
 )
@@ -21,21 +20,6 @@ var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
 var locationSegment = regexp.MustCompile(`^[A-Za-z0-9]{1,40}$`)
 var reservedMarketplaceRoutes = map[string]struct{}{
 	"category": {}, "create": {}, "item": {}, "profile": {}, "search": {}, "you": {},
-}
-
-func marketplaceCity(raw string) (string, error) {
-	slug := strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return unicode.ToLower(r)
-		}
-
-		return -1
-	}, raw)
-	if slug == "" || len(slug) > 40 {
-		return "", shop.Errorf(shop.ErrInvalidInput, "marketplace city must be a Facebook city slug such as austin or nyc")
-	}
-
-	return slug, nil
 }
 
 // marketplaceLocation accepts either a canonical Facebook Marketplace location
@@ -56,9 +40,6 @@ func marketplaceLocation(raw string) (string, error) {
 		if len(parts) < 2 || len(parts) > 3 || !strings.EqualFold(parts[0], "marketplace") {
 			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must include a Marketplace city slug or location ID")
 		}
-		if _, reserved := reservedMarketplaceRoutes[strings.ToLower(parts[1])]; reserved {
-			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must include a Marketplace city slug or location ID")
-		}
 		if len(parts) == 3 && !strings.EqualFold(parts[2], "search") {
 			return "", shop.Errorf(shop.ErrInvalidInput, "location URL must be a Marketplace location or search URL")
 		}
@@ -67,6 +48,9 @@ func marketplaceLocation(raw string) (string, error) {
 
 	if !locationSegment.MatchString(value) {
 		return "", shop.Errorf(shop.ErrInvalidInput, "marketplace location must be a canonical Facebook city slug, numeric location ID, or Marketplace URL")
+	}
+	if _, reserved := reservedMarketplaceRoutes[strings.ToLower(value)]; reserved {
+		return "", shop.Errorf(shop.ErrInvalidInput, "location cannot be a reserved Marketplace route")
 	}
 
 	return strings.ToLower(value), nil
@@ -110,29 +94,25 @@ func parseRadiusKm(raw, unit string) (int, error) {
 }
 
 func searchLocationRadius(filters map[string]string) (string, int, error) {
-	if filters == nil || (strings.TrimSpace(filters["city"]) == "" && strings.TrimSpace(filters["location"]) == "") {
+	if filters == nil {
 		return "", 0, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires --filter location=<Facebook location ID, city slug, or Marketplace URL>")
 	}
-	var location string
+	city, locationFilter := strings.TrimSpace(filters["city"]), strings.TrimSpace(filters["location"])
+	if city != "" && locationFilter != "" {
+		return "", 0, shop.Errorf(shop.ErrInvalidInput, "use only one of the city and location filters")
+	}
+	location := locationFilter
+	if location == "" {
+		location = city
+	}
+	if location == "" {
+		return "", 0, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires --filter location=<place name, city slug, ID, or Marketplace URL>")
+	}
 	var err error
-	if strings.TrimSpace(filters["location"]) != "" {
-		if strings.TrimSpace(filters["city"]) != "" {
-			return "", 0, shop.Errorf(shop.ErrInvalidInput, "use only one of the city and location filters")
-		}
-		location, err = marketplaceLocation(filters["location"])
-		if err != nil && !strings.Contains(filters["location"], "://") {
-			// Keep a free-form place name for resolution in Search. URLs remain
-			// strictly validated by marketplaceLocation.
-			location = strings.TrimSpace(filters["location"])
-			err = nil
-		}
-	} else {
-		city := strings.TrimSpace(filters["city"])
-		if locationSegment.MatchString(city) {
-			location, err = marketplaceCity(city)
-		} else {
-			location = city
-		}
+	if strings.Contains(location, "://") {
+		location, err = marketplaceLocation(location)
+	} else if locationSegment.MatchString(location) {
+		location = strings.ToLower(location)
 	}
 	if err != nil {
 		return "", 0, err
@@ -168,18 +148,23 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
 		}
 	}
+	rawLocation := strings.TrimSpace(query.Filters["location"])
+	if rawLocation == "" {
+		rawLocation = strings.TrimSpace(query.Filters["city"])
+	}
+	explicitURL := strings.Contains(rawLocation, "://")
 	location, radiusKm, err := searchLocationRadius(query.Filters)
 	if err != nil {
 		return nil, err
 	}
-	locationWasSpecified := strings.TrimSpace(query.Filters["location"]) != "" || strings.TrimSpace(query.Filters["city"]) != ""
-	if locationWasSpecified && !isNumericLocationID(location) && !canonicalMarketplaceSlug(location) {
+	if !explicitURL && !isNumericLocationID(location) {
 		resolved, resolveErr := s.resolveMarketplaceLocation(ctx, location)
 		if resolveErr != nil {
-			// A one-word input can still be a valid Marketplace slug. Preserve
-			// that compatibility only when the picker found no exact match.
-			if !shop.IsNotFound(resolveErr) || strings.ContainsAny(location, " ,.-") {
+			if !shop.IsNotFound(resolveErr) || !locationSegment.MatchString(location) {
 				return nil, resolveErr
+			}
+			if _, reserved := reservedMarketplaceRoutes[strings.ToLower(location)]; reserved {
+				return nil, shop.Errorf(shop.ErrInvalidInput, "location cannot be a reserved Marketplace route")
 			}
 		} else {
 			location = resolved
@@ -290,13 +275,4 @@ func isNumericLocationID(value string) bool {
 		}
 	}
 	return true
-}
-
-func canonicalMarketplaceSlug(value string) bool {
-	switch strings.ToLower(value) {
-	case "austin", "nyc", "sanfrancisco", "la":
-		return true
-	default:
-		return false
-	}
 }

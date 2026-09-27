@@ -38,13 +38,6 @@ func normalizePlaceName(raw string) string {
 	fields := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(raw)), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
-	for i, field := range fields {
-		if len(field) == 2 {
-			if name, ok := usStateNames[strings.ToUpper(field)]; ok {
-				fields[i] = strings.ToLower(name)
-			}
-		}
-	}
 	return strings.Join(fields, " ")
 }
 
@@ -52,7 +45,7 @@ func expandUSStateAbbreviation(place string) string {
 	place = strings.TrimSpace(place)
 	commaParts := strings.Split(place, ",")
 	last := strings.TrimSpace(commaParts[len(commaParts)-1])
-	if len(last) == 2 {
+	if len(commaParts) > 1 && len(last) == 2 {
 		if name, ok := usStateNames[strings.ToUpper(last)]; ok {
 			commaParts[len(commaParts)-1] = name
 			return strings.Join(commaParts, ", ")
@@ -92,7 +85,7 @@ func (s *Store) resolveMarketplaceLocation(ctx context.Context, place string) (s
 			"caller":               "MARKETPLACE",
 			"country_filter":       nil,
 			"integration_strategy": "STRING_MATCH",
-			"page_category":        []string{"CITY", "SUBCITY", "NEIGHBORHOOD", "POSTAL_CODE"},
+			"page_category":        []string{"CITY", "SUBCITY", "NEIGHBORHOOD"},
 			"query":                place,
 			"search_type":          "PLACE_TYPEAHEAD",
 			"viewer_coordinates":   nil,
@@ -140,9 +133,8 @@ func (s *Store) resolveMarketplaceLocation(ctx context.Context, place string) (s
 				StreetResults struct {
 					Edges []struct {
 						Node struct {
-							Name     string `json:"single_line_address"`
-							Subtitle string `json:"subtitle"`
-							Page     struct {
+							Name string `json:"single_line_address"`
+							Page struct {
 								ID string `json:"id"`
 							} `json:"page"`
 						} `json:"node"`
@@ -161,15 +153,11 @@ func (s *Store) resolveMarketplaceLocation(ctx context.Context, place string) (s
 
 	want := normalizePlaceName(place)
 	var exact []struct{ name, id string }
-	var candidates []string
+	queryHasQualifier := strings.Contains(place, ",")
 	for _, edge := range payload.Data.CityStreetSearch.StreetResults.Edges {
 		node := edge.Node
-		if node.Name != "" {
-			candidates = append(candidates, node.Name)
-		}
 		addressName := normalizePlaceName(node.Name)
 		cityName := normalizePlaceName(strings.SplitN(node.Name, ",", 2)[0])
-		queryHasQualifier := strings.Contains(place, ",")
 		matches := addressName == want || (!queryHasQualifier && strings.ReplaceAll(cityName, " ", "") == strings.ReplaceAll(want, " ", ""))
 		if node.Page.ID == "" || !matches {
 			continue
@@ -187,11 +175,7 @@ func (s *Store) resolveMarketplaceLocation(ctx context.Context, place string) (s
 	}
 	switch len(exact) {
 	case 0:
-		message := fmt.Sprintf("Facebook did not return an exact location match for %q; specify a city and state or use its Marketplace location URL", place)
-		if len(candidates) > 0 {
-			message += ". Suggestions: " + strings.Join(candidates, "; ")
-		}
-		return "", shop.Errorf(shop.ErrNotFound, "%s", message)
+		return "", shop.Errorf(shop.ErrNotFound, "Facebook did not return an exact location match for %q; specify a city and state or use its Marketplace location URL", place)
 	case 1:
 		if !locationSegment.MatchString(exact[0].id) {
 			return "", shop.Errorf(shop.ErrUpstream, "Facebook returned an invalid location identifier")
