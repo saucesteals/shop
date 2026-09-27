@@ -5,7 +5,7 @@ description: >
   carts, place orders, and track packages via the `shop` CLI. Use when asked to buy something, find a product,
   look up prices, add to cart, checkout, order, search for products, compare products, check
   availability, look at reviews, find deals, check a shipment, or save package tracking numbers. Currently supports
-  Amazon (US/UK/DE/JP/CA/AU). Provider architecture supports adding new stores.
+  Amazon (US/UK/DE/JP/CA/AU) and Facebook Marketplace (anonymous search and listing details).
 ---
 
 # shop
@@ -63,9 +63,12 @@ saved JSON formatting preferences.
 shop search "protein powder"
 shop search "usb-c cable" --sort price_low --page 2
 shop search "headphones" --min-price 2000 --max-price 10000 --min-rating 4.0
+shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 ```
 
 Flags: `--sort` (relevance|price_low|price_high|rating|newest|best_seller), `--page`, `--page-size`, `--min-price`, `--max-price` (cents), `--min-rating`, `--category`, `--filter key=value` (repeatable)
+
+Facebook Marketplace: `--store facebook --filter city=<slug>` (`austin`, `nyc`, `sanfrancisco`). Optional `--filter radius=` (miles, or `km` suffix). `--min-price` / `--max-price` work. First page only. No cart or checkout.
 
 Response: `.products[]` has id, title, price, rating, url, badge, availability. `.hasMore` for pagination.
 
@@ -75,7 +78,7 @@ Response: `.products[]` has id, title, price, rating, url, badge, availability. 
 shop product B0D1XD1ZV3
 ```
 
-Product IDs are ASINs (10-char alphanumeric). Returns title, brand, price, listPrice, rating, images, specs, features, description, seller, availability, variantInfo.
+Amazon product IDs are ASINs. Facebook Marketplace IDs are numeric listing IDs or `https://www.facebook.com/marketplace/item/<id>/` URLs. Returns title, brand, price, listPrice, rating, images, specs, features, description, seller, availability, variantInfo.
 
 ### Variants
 
@@ -342,3 +345,4 @@ Show 2–3 reviews max by default, top helpful first.
 - Cart state is per-store, persisted locally. `cart clear` before starting a new purchase flow.
 - Amazon only returns the buy-box offer from `offers` (single seller). Other providers may differ.
 - `checkout` returns a `checkoutId` tied to cart state — if anything changes, re-checkout.
+- Facebook Marketplace is read-only. Search requires `--filter city=` with a Facebook city slug.

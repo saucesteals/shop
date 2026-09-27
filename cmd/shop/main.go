@@ -5,6 +5,7 @@ import (
 
 	// Register providers via init().
 	_ "github.com/saucesteals/shop/provider/amazon"
+	_ "github.com/saucesteals/shop/provider/facebook"
 )
 
 func main() {

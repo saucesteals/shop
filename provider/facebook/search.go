@@ -1,0 +1,210 @@
+package facebook
+
+import (
+	"context"
+	"encoding/json"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/saucesteals/shop"
+)
+
+const (
+	defaultRadiusKm = 65
+	maxRadiusKm     = 500
+)
+
+var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
+
+func marketplaceCity(raw string) (string, error) {
+	slug := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) {
+			return unicode.ToLower(r)
+		}
+
+		return -1
+	}, raw)
+	if slug == "" || len(slug) > 40 {
+		return "", shop.Errorf(shop.ErrInvalidInput, "marketplace city must be a Facebook city slug such as austin or nyc")
+	}
+
+	return slug, nil
+}
+
+func parseRadiusKm(raw, unit string) (int, error) {
+	match := radiusValue.FindStringSubmatch(strings.ReplaceAll(raw, " ", ""))
+	if match == nil {
+		return 0, shop.Errorf(shop.ErrInvalidInput, "radius must be a number with optional mi or km suffix")
+	}
+	value, err := strconv.ParseFloat(match[1], 64)
+	if err != nil || value <= 0 {
+		return 0, shop.Errorf(shop.ErrInvalidInput, "radius must be greater than zero")
+	}
+	suffix := match[2]
+	if suffix == "" {
+		suffix = unit
+	} else if unit != "" && unit != suffix {
+		return 0, shop.Errorf(shop.ErrInvalidInput, "conflicting radius units")
+	}
+	if suffix == "" {
+		suffix = "mi"
+	}
+	km := value
+	switch suffix {
+	case "km":
+	case "mi":
+		km = value * 1.60934
+	default:
+		return 0, shop.Errorf(shop.ErrInvalidInput, "radius_unit must be mi or km")
+	}
+	rounded := int(km + 0.5)
+	if rounded < 1 {
+		rounded = 1
+	}
+	if rounded > maxRadiusKm {
+		return 0, shop.Errorf(shop.ErrInvalidInput, "radius exceeds %d km", maxRadiusKm)
+	}
+
+	return rounded, nil
+}
+
+func searchCityRadius(filters map[string]string) (string, int, error) {
+	if filters == nil || strings.TrimSpace(filters["city"]) == "" {
+		return "", 0, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires --filter city=<city>")
+	}
+	city, err := marketplaceCity(filters["city"])
+	if err != nil {
+		return "", 0, err
+	}
+	radiusKm := defaultRadiusKm
+	if raw := strings.ToLower(strings.TrimSpace(filters["radius"])); raw != "" {
+		radiusKm, err = parseRadiusKm(raw, strings.ToLower(strings.TrimSpace(filters["radius_unit"])))
+		if err != nil {
+			return "", 0, err
+		}
+	} else if strings.TrimSpace(filters["radius_unit"]) != "" {
+		return "", 0, shop.Errorf(shop.ErrInvalidInput, "radius_unit requires radius")
+	}
+
+	return city, radiusKm, nil
+}
+
+// Search returns the first relevance page for a Marketplace city and radius.
+func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.SearchResult, error) {
+	if query == nil || strings.TrimSpace(query.Query) == "" {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace search query is required")
+	}
+	if query.Page < 0 || query.PageSize < 0 {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "page and page size must not be negative")
+	}
+	if query.Page > 1 || (query.Sort != "" && query.Sort != shop.SortRelevance) || query.MinRating != nil || query.Category != "" {
+		return nil, shop.Errorf(shop.ErrNotSupported, "marketplace search supports first-page relevance results only")
+	}
+	for key := range query.Filters {
+		switch key {
+		case "city", "radius", "radius_unit":
+		default:
+			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
+		}
+	}
+	city, radiusKm, err := searchCityRadius(query.Filters)
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{"query": {query.Query}, "radius": {strconv.Itoa(radiusKm)}}
+	if query.MinPrice != nil {
+		if *query.MinPrice < 0 {
+			return nil, shop.Errorf(shop.ErrInvalidInput, "min price must not be negative")
+		}
+		params.Set("minPrice", strconv.FormatInt(*query.MinPrice/100, 10))
+	}
+	if query.MaxPrice != nil {
+		if *query.MaxPrice < 0 {
+			return nil, shop.Errorf(shop.ErrInvalidInput, "max price must not be negative")
+		}
+		params.Set("maxPrice", strconv.FormatInt(*query.MaxPrice/100, 10))
+	}
+	body, err := s.document(ctx, "/marketplace/"+city+"/search/?"+params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	result := &shop.SearchResult{
+		Products: []shop.ProductSummary{},
+		Page:     1,
+		Warnings: []string{
+			"Search listing currencies may be omitted by Facebook; USD is assumed.",
+			"Pagination is not supported; only the first page is returned.",
+		},
+	}
+	found := false
+	hasEdges := false
+	seen := make(map[string]bool)
+	err = relayData(body, func(raw json.RawMessage) error {
+		var data struct {
+			Search *struct {
+				Feed *struct {
+					Edges []struct {
+						Node struct {
+							Listing *listing `json:"listing"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"feed_units"`
+			} `json:"marketplace_search"`
+		}
+		if err := json.Unmarshal(raw, &data); err != nil {
+			return shop.Errorf(shop.ErrUpstream, "decode marketplace search: %v", err)
+		}
+		if data.Search == nil || data.Search.Feed == nil {
+			return nil
+		}
+		found = true
+		if data.Search.Feed.Edges == nil {
+			return shop.Errorf(shop.ErrUpstream, "missing marketplace search edges")
+		}
+		hasEdges = hasEdges || len(data.Search.Feed.Edges) > 0
+		for _, edge := range data.Search.Feed.Edges {
+			if edge.Node.Listing == nil {
+				continue
+			}
+			product, err := edge.Node.Listing.product(true)
+			if err != nil {
+				return err
+			}
+			if seen[product.ID] {
+				continue
+			}
+			seen[product.ID] = true
+			result.Products = append(result.Products, shop.ProductSummary{
+				ID:           product.ID,
+				Title:        product.Title,
+				URL:          product.URL,
+				ImageURL:     product.Images[0].URL,
+				Price:        product.Price,
+				Availability: product.Availability,
+				Attributes:   product.Attributes,
+			})
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, shop.Errorf(shop.ErrUpstream, "marketplace search Relay payload missing")
+	}
+	if hasEdges && len(result.Products) == 0 {
+		return nil, shop.Errorf(shop.ErrUpstream, "marketplace feed contains no readable listings")
+	}
+	if query.PageSize > 0 && query.PageSize < len(result.Products) {
+		result.Products = result.Products[:query.PageSize]
+		result.HasMore = true
+		result.Warnings = append(result.Warnings, "page-size truncates this first page locally")
+	}
+	result.Count = len(result.Products)
+
+	return result, nil
+}
