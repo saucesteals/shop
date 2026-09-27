@@ -3,8 +3,10 @@ package facebook
 import (
 	"context"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/saucesteals/shop"
@@ -14,6 +16,7 @@ const (
 	providerName = "facebook"
 	baseURL      = "https://www.facebook.com"
 	httpTimeout  = 30 * time.Second
+	userAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
 
 func init() { shop.Register(&Provider{}) }
@@ -61,16 +64,36 @@ func (p *Provider) Store(_ context.Context, handle, _ string) (shop.Store, error
 	if !facebookHandle(handle) {
 		return nil, shop.Errorf(shop.ErrStoreNotFound, "unsupported Facebook handle %q", handle)
 	}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrInternal, "create anonymous Marketplace cookie jar: %v", err)
+	}
 
-	return &Store{client: &http.Client{
-		Transport:     http.DefaultTransport.(*http.Transport).Clone(),
-		Timeout:       httpTimeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}}, nil
+	return &Store{
+		client: &http.Client{
+			Transport:     http.DefaultTransport.(*http.Transport).Clone(),
+			Timeout:       httpTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			Jar:           jar,
+		},
+		places:     make(map[string]coordinate),
+		operations: make(map[string]cachedOperation),
+	}, nil
+}
+
+type cachedOperation struct {
+	resources string
+	id        string
 }
 
 // Store implements public Marketplace document lookups.
-type Store struct{ client *http.Client }
+type Store struct {
+	client *http.Client
+
+	cacheMu    sync.RWMutex
+	places     map[string]coordinate
+	operations map[string]cachedOperation
+}
 
 func storeInfo() shop.StoreInfo {
 	return shop.StoreInfo{
