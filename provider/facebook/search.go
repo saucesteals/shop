@@ -27,6 +27,15 @@ const (
 
 var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
 
+func daysSinceListed(raw string) (int, error) {
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days < 1 || days > 365 {
+		return 0, shop.Errorf(shop.ErrInvalidInput, "days_since_listed must be between 1 and 365")
+	}
+
+	return days, nil
+}
+
 type searchPage struct {
 	DocID     string
 	Variables json.RawMessage
@@ -134,12 +143,12 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if query.PageSize > 100 {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace page size must be between 1 and 100")
 	}
-	if (query.Sort != "" && query.Sort != shop.SortRelevance) || query.MinRating != nil || query.Category != "" {
-		return nil, shop.Errorf(shop.ErrNotSupported, "marketplace search supports relevance results without rating or category filters")
+	if (query.Sort != "" && query.Sort != shop.SortRelevance && query.Sort != shop.SortNewest) || query.MinRating != nil || query.Category != "" {
+		return nil, shop.Errorf(shop.ErrNotSupported, "marketplace search supports relevance or newest results without rating or category filters")
 	}
 	for key := range query.Filters {
 		switch key {
-		case "city", "radius", "radius_unit":
+		case "city", "days_since_listed", "radius", "radius_unit":
 		default:
 			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
 		}
@@ -158,6 +167,16 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	params := url.Values{
 		"query":  {query.Query},
 		"radius": {strconv.Itoa(radiusKm)},
+	}
+	if query.Sort == shop.SortNewest {
+		params.Set("sortBy", "creation_time_descend")
+	}
+	if raw := strings.TrimSpace(query.Filters["days_since_listed"]); raw != "" {
+		days, err := daysSinceListed(raw)
+		if err != nil {
+			return nil, err
+		}
+		params.Set("daysSinceListed", strconv.Itoa(days))
 	}
 	if query.MinPrice != nil {
 		if *query.MinPrice < 0 {

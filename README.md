@@ -200,7 +200,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 - `--max-price` — Maximum price in minor units (cents)
 - `--min-rating` — Minimum average rating (e.g. `4.0`)
 - `--category` — Category filter (provider-specific)
-- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city` and `radius`.
+- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city`, `radius`, and `days_since_listed`.
 
 </details>
 
@@ -212,11 +212,12 @@ Results are scoped to a Facebook city slug plus radius (`austin`, `nyc`, `sanfra
 
 ```bash
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi
+shop search "desk" --store facebook --sort newest --filter city=austin --filter days_since_listed=1
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi --page 2
 shop product 2643088989483257 --store facebook
 ```
 
-`--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
+`--sort newest` requests Facebook's newest-first feed. `--filter days_since_listed=N` limits results by listing age (1–365 days). Results include Facebook's Unix `creation_time` as `attributes.creationTime` when available. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
 
 <details>
 <summary><strong>Example output</strong></summary>
