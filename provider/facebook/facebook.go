@@ -64,18 +64,40 @@ func (p *Provider) Store(_ context.Context, handle, _ string) (shop.Store, error
 	if !facebookHandle(handle) {
 		return nil, shop.Errorf(shop.ErrStoreNotFound, "unsupported Facebook handle %q", handle)
 	}
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return nil, shop.Errorf(shop.ErrInternal, "create anonymous Marketplace cookie jar: %v", err)
+	return New(nil)
+}
+
+// New creates a Marketplace store using client. A nil client uses the default
+// Marketplace transport. The supplied client is copied and never mutated.
+//
+// Marketplace requests do not follow redirects so authentication redirects can
+// be reported to callers. When client has no cookie jar, New creates a private
+// anonymous jar for the store.
+func New(client *http.Client) (*Store, error) {
+	if client == nil {
+		client = &http.Client{
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
+			Timeout:   httpTimeout,
+		}
+	} else {
+		copy := *client
+		client = &copy
 	}
 
+	if client.Timeout == 0 {
+		client.Timeout = httpTimeout
+	}
+	if client.Jar == nil {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			return nil, shop.Errorf(shop.ErrInternal, "create anonymous Marketplace cookie jar: %v", err)
+		}
+		client.Jar = jar
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
 	return &Store{
-		client: &http.Client{
-			Transport:     http.DefaultTransport.(*http.Transport).Clone(),
-			Timeout:       httpTimeout,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-			Jar:           jar,
-		},
+		client:     client,
 		places:     make(map[string]coordinate),
 		operations: make(map[string]cachedOperation),
 	}, nil
