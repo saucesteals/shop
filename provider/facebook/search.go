@@ -120,8 +120,19 @@ func searchLocationRadius(filters map[string]string) (string, int, error) {
 			return "", 0, shop.Errorf(shop.ErrInvalidInput, "use only one of the city and location filters")
 		}
 		location, err = marketplaceLocation(filters["location"])
+		if err != nil && !strings.Contains(filters["location"], "://") {
+			// Keep a free-form place name for resolution in Search. URLs remain
+			// strictly validated by marketplaceLocation.
+			location = strings.TrimSpace(filters["location"])
+			err = nil
+		}
 	} else {
-		location, err = marketplaceCity(filters["city"])
+		city := strings.TrimSpace(filters["city"])
+		if locationSegment.MatchString(city) {
+			location, err = marketplaceCity(city)
+		} else {
+			location = city
+		}
 	}
 	if err != nil {
 		return "", 0, err
@@ -160,6 +171,19 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	location, radiusKm, err := searchLocationRadius(query.Filters)
 	if err != nil {
 		return nil, err
+	}
+	locationWasSpecified := strings.TrimSpace(query.Filters["location"]) != "" || strings.TrimSpace(query.Filters["city"]) != ""
+	if locationWasSpecified && !isNumericLocationID(location) && !canonicalMarketplaceSlug(location) {
+		resolved, resolveErr := s.resolveMarketplaceLocation(ctx, location)
+		if resolveErr != nil {
+			// A one-word input can still be a valid Marketplace slug. Preserve
+			// that compatibility only when the picker found no exact match.
+			if !shop.IsNotFound(resolveErr) || strings.ContainsAny(location, " ,.-") {
+				return nil, resolveErr
+			}
+		} else {
+			location = resolved
+		}
 	}
 	params := url.Values{"query": {query.Query}, "radius": {strconv.Itoa(radiusKm)}}
 	if query.MinPrice != nil {
@@ -254,4 +278,25 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	result.Count = len(result.Products)
 
 	return result, nil
+}
+
+func isNumericLocationID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func canonicalMarketplaceSlug(value string) bool {
+	switch strings.ToLower(value) {
+	case "austin", "nyc", "sanfrancisco", "la":
+		return true
+	default:
+		return false
+	}
 }

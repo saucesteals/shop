@@ -208,12 +208,13 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 
 Anonymous search and listing details. No login, cart, or checkout.
 
-Results are scoped to a Facebook Marketplace location plus radius. Use `--filter location=` with a canonical city slug, Facebook's numeric location ID, or a Facebook Marketplace location/search URL. To search any city, town, neighborhood, or postal-code location, choose it in Facebook Marketplace's location picker and copy its identifier from the resulting `/marketplace/<identifier>/` URL. For example, New Brunswick, NJ resolves to numeric location ID `108188925868598`. The legacy `city=` filter remains supported for city slugs and numeric IDs. Common city slugs include `austin`, `nyc`, `sanfrancisco`, and `la`.
+Results are scoped to a Facebook Marketplace location plus radius. Use `--filter location=` with a city/town/neighborhood/postal-code name, a canonical city slug, Facebook's numeric location ID, or a Facebook Marketplace location/search URL. Place names are resolved through Facebook's location picker and must have one exact match; include a state or region when a name could refer to multiple places. For example, `--filter location='Wayne, NJ'` resolves to the picker-provided location ID. The legacy `city=` filter remains supported for place names, city slugs, and numeric IDs. Common city slugs include `austin`, `nyc`, `sanfrancisco`, and `la`.
 
-Radius is miles unless suffixed with `km`; Facebook's default is 65 km. `--min-price` and `--max-price` apply. First page only. Free-form place names are not resolved automatically; use the identifier or URL provided by Facebook's location picker.
+Radius is miles unless suffixed with `km`; Facebook's default is 65 km. `--min-price` and `--max-price` apply. First page only. Facebook's typeahead endpoint is undocumented and may change; IDs and Marketplace URLs remain available as a fallback.
 
 ```bash
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi
+shop search "bike" --store facebook --filter location='Wayne, NJ' --filter radius=20mi
 shop search "left handed golf set" --store facebook --filter location=108188925868598 --filter radius=40mi
 shop search "desk" --store facebook --filter location=https://www.facebook.com/marketplace/108188925868598/
 shop product 2643088989483257 --store facebook

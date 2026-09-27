@@ -2,6 +2,7 @@ package facebook
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -105,7 +106,7 @@ func TestSearchUsesNumericLocationIDAndRadius(t *testing.T) {
 	}
 }
 
-func TestSearchRejectsInvalidLocationBeforeRequest(t *testing.T) {
+func TestSearchRejectsUnsafeLocationURLBeforeRequest(t *testing.T) {
 	requests := 0
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		requests++
@@ -114,13 +115,82 @@ func TestSearchRejectsInvalidLocationBeforeRequest(t *testing.T) {
 	store := &Store{client: client}
 	_, err := store.Search(context.Background(), &shop.SearchQuery{
 		Query:   "left handed golf set",
-		Filters: map[string]string{"location": "New Brunswick, New Jersey"},
+		Filters: map[string]string{"location": "https://example.com/marketplace/108188925868598/"},
 	})
 	if err == nil {
-		t.Fatal("expected invalid free-form location to fail")
+		t.Fatal("expected unsafe URL to fail")
 	}
 	if requests != 0 {
 		t.Fatalf("invalid location made %d HTTP requests, want none", requests)
+	}
+}
+
+func TestSearchResolvesSmallTownWithPickerAndUsesItsID(t *testing.T) {
+	var calls int
+	var searchPath string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		var body string
+		switch r.URL.Path {
+		case "/marketplace/":
+			body = `<script>"LSD",[],{"token":"test-lsd"}</script>`
+		case "/api/graphql/":
+			if r.Method != http.MethodPost {
+				t.Fatalf("GraphQL method = %s, want POST", r.Method)
+			}
+			if got := r.Header.Get("X-FB-LSD"); got != "test-lsd" {
+				t.Fatalf("X-FB-LSD = %q, want bootstrap token", got)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			var variables struct {
+				Params struct {
+					Query string `json:"query"`
+				} `json:"params"`
+			}
+			if err := json.Unmarshal([]byte(r.Form.Get("variables")), &variables); err != nil {
+				t.Fatal(err)
+			}
+			if variables.Params.Query != "Wayne, New Jersey" {
+				t.Fatalf("picker query = %q, want expanded Wayne, New Jersey", variables.Params.Query)
+			}
+			body = `{"data":{"city_street_search":{"street_results":{"edges":[{"node":{"single_line_address":"Wayne, New Jersey","subtitle":"City","page":{"id":"103723296332578"}}}]}}}}`
+		case "/marketplace/103723296332578/search/":
+			searchPath = r.URL.Path
+			body = `<script type="application/json">{"data":{"marketplace_search":{"feed_units":{"edges":[]}}}}</script>`
+		default:
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}
+	store := &Store{client: client}
+	_, err := store.Search(context.Background(), &shop.SearchQuery{
+		Query:   "bicycle",
+		Filters: map[string]string{"location": "Wayne, NJ", "radius": "20mi"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if searchPath != "/marketplace/103723296332578/search/" {
+		t.Fatalf("search request path = %q, want to use resolved Wayne ID", searchPath)
+	}
+	if calls != 3 {
+		t.Fatalf("made %d HTTP requests, want bootstrap + picker + search", calls)
+	}
+}
+
+func TestResolveMarketplaceLocationRejectsAmbiguousTownName(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := `<script>"LSD",[],{"token":"test-lsd"}</script>`
+		if r.URL.Path == "/api/graphql/" {
+			body = `{"data":{"city_street_search":{"street_results":{"edges":[{"node":{"single_line_address":"Wayne, New Jersey","page":{"id":"103723296332578"}}},{"node":{"single_line_address":"Wayne, Pennsylvania","page":{"id":"104"}}}]}}}}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}
+	_, err := (&Store{client: client}).resolveMarketplaceLocation(context.Background(), "Wayne")
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("error = %v, want ambiguous location error", err)
 	}
 }
 
