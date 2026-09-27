@@ -68,7 +68,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 
 Flags: `--sort` (relevance|price_low|price_high|rating|newest|best_seller), `--page`, `--page-size`, `--min-price`, `--max-price` (cents), `--min-rating`, `--category`, `--filter key=value` (repeatable)
 
-Facebook Marketplace: `--store facebook --filter city=<slug>` (`austin`, `nyc`, `sanfrancisco`). Optional `--filter radius=` (miles, or `km` suffix). `--min-price` / `--max-price` work. First page only. No cart or checkout.
+Facebook Marketplace: `--store facebook --filter location=<place-name|slug|ID|Marketplace-URL>`. Place names are resolved through Facebook's typeahead; include a state/region to disambiguate. Exact unique matches are used, never an arbitrary fuzzy first result. Numeric Facebook location IDs and location/search URLs are accepted directly. Example: `--filter location='Wayne, NJ'`. The legacy `--filter city=` remains supported (`austin`, `nyc`, `sanfrancisco`, and `la` are common slugs). Facebook's typeahead endpoint is undocumented and may change. Optional `--filter radius=` (miles, or `km` suffix). `--min-price` / `--max-price` work. First page only. No cart or checkout.
 
 Response: `.products[]` has id, title, price, rating, url, badge, availability. `.hasMore` for pagination.
 
@@ -345,4 +345,4 @@ Show 2–3 reviews max by default, top helpful first.
 - Cart state is per-store, persisted locally. `cart clear` before starting a new purchase flow.
 - Amazon only returns the buy-box offer from `offers` (single seller). Other providers may differ.
 - `checkout` returns a `checkoutId` tied to cart state — if anything changes, re-checkout.
-- Facebook Marketplace is read-only. Search requires `--filter city=` with a Facebook city slug.
+- Facebook Marketplace is read-only. Search requires `--filter location=` with a place name, city slug, numeric location ID, or Marketplace URL; `--filter city=` remains a compatibility alias.

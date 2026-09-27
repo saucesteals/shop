@@ -3,6 +3,7 @@ package facebook
 import (
 	"context"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -62,9 +63,14 @@ func (p *Provider) Store(_ context.Context, handle, _ string) (shop.Store, error
 		return nil, shop.Errorf(shop.ErrStoreNotFound, "unsupported Facebook handle %q", handle)
 	}
 
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
 	return &Store{client: &http.Client{
 		Transport:     http.DefaultTransport.(*http.Transport).Clone(),
 		Timeout:       httpTimeout,
+		Jar:           jar,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }
