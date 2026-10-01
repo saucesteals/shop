@@ -217,7 +217,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi --
 shop product 2643088989483257 --store facebook
 ```
 
-`--sort newest` requests Facebook's newest-first feed. `--filter days_since_listed=N` limits results by listing age (1–365 days). Results include Facebook's Unix `creation_time` as `attributes.creationTime` when available. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
+`--sort newest` requests Facebook's newest-first feed. `--filter days_since_listed=N` limits results by listing age (1–365 days). Search uses Facebook's native Marketplace GraphQL query with explicit city coordinates, radius, sort, and listing-age variables; the HTML page is only used to discover operation IDs and the city's `buyLocation`. Results include Facebook's Unix `creation_time` as `attributes.creationTime` when available. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
 
 <details>
 <summary><strong>Example output</strong></summary>

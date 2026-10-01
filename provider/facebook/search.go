@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/saucesteals/shop"
@@ -132,7 +133,10 @@ func searchCityRadius(filters map[string]string) (string, int, error) {
 	return city, radiusKm, nil
 }
 
-// Search returns one native Marketplace relevance page for a city and radius.
+// Search returns one native Marketplace page for a city and radius.
+// The HTML search document is used only to discover the city coordinates and
+// Relay operation IDs. The listing feed is always fetched from GraphQL with
+// explicit buyLocation, radius, sort, and listing-age variables.
 func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.SearchResult, error) {
 	if query == nil || strings.TrimSpace(query.Query) == "" {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace search query is required")
@@ -168,15 +172,16 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		"query":  {query.Query},
 		"radius": {strconv.Itoa(radiusKm)},
 	}
+	daysSince := 0
 	if query.Sort == shop.SortNewest {
 		params.Set("sortBy", "creation_time_descend")
 	}
 	if raw := strings.TrimSpace(query.Filters["days_since_listed"]); raw != "" {
-		days, err := daysSinceListed(raw)
+		daysSince, err = daysSinceListed(raw)
 		if err != nil {
 			return nil, err
 		}
-		params.Set("daysSinceListed", strconv.Itoa(days))
+		params.Set("daysSinceListed", strconv.Itoa(daysSince))
 	}
 	if query.MinPrice != nil {
 		if *query.MinPrice < 0 {
@@ -201,7 +206,14 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if err != nil {
 		return nil, err
 	}
-	feed := search.Feed
+	search.Variables, err = applySearchVariables(search.Variables, search.Center, radiusKm, query.Sort == shop.SortNewest, daysSince, query.MinPrice, query.MaxPrice)
+	if err != nil {
+		return nil, err
+	}
+	feed, err := s.searchFeed(ctx, search.DocID, searchQueryName, search.Variables)
+	if err != nil {
+		return nil, err
+	}
 	paginationDocID := ""
 	if page > 1 {
 		paginationDocID, err = s.operationID(ctx, body, searchContentComponent, searchPaginationOperation)
@@ -232,11 +244,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		if err != nil {
 			return nil, err
 		}
-		raw, err := s.graphQL(ctx, paginationDocID, searchPaginationQuery, variables)
-		if err != nil {
-			return nil, err
-		}
-		feed, err = parseSearchResponse(raw)
+		feed, err = s.searchFeed(ctx, paginationDocID, searchPaginationQuery, variables)
 		if err != nil {
 			return nil, err
 		}
@@ -357,6 +365,62 @@ func parseSearchPage(body []byte) (searchPage, error) {
 	}
 
 	return page, nil
+}
+
+func (s *Store) searchFeed(ctx context.Context, docID, queryName string, variables json.RawMessage) (searchFeed, error) {
+	raw, err := s.graphQL(ctx, docID, queryName, variables)
+	if err != nil {
+		return searchFeed{}, err
+	}
+
+	return parseSearchResponse(raw)
+}
+
+func marketplaceCreationDays(days int, now time.Time) string {
+	today := now.UTC().Unix() / 86400
+	ids := make([]string, 0, days+1)
+	for i := range days + 1 {
+		ids = append(ids, strconv.FormatInt(today-int64(i), 10))
+	}
+
+	return strings.Join(ids, ";")
+}
+
+func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, newest bool, days int, minPrice, maxPrice *int64) (json.RawMessage, error) {
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, shop.Errorf(shop.ErrUpstream, "decode Marketplace search variables: %v", err)
+	}
+	params, _ := root["params"].(map[string]any)
+	browse, _ := params["browse_request_params"].(map[string]any)
+	if browse == nil {
+		return nil, shop.Errorf(shop.ErrUpstream, "marketplace search request params missing")
+	}
+	root["buyLocation"] = map[string]any{
+		"latitude":  center.Latitude,
+		"longitude": center.Longitude,
+	}
+	browse["filter_location_latitude"] = center.Latitude
+	browse["filter_location_longitude"] = center.Longitude
+	browse["filter_radius_km"] = radiusKm
+	if newest {
+		browse["commerce_search_sort_by"] = "CREATION_TIME_DESCEND"
+	}
+	if days > 0 {
+		browse["commerce_search_and_rp_ctime_days"] = marketplaceCreationDays(days, time.Now())
+	}
+	if minPrice != nil {
+		browse["filter_price_lower_bound"] = *minPrice / 100
+	}
+	if maxPrice != nil {
+		browse["filter_price_upper_bound"] = *maxPrice / 100
+	}
+	encoded, err := json.Marshal(root)
+	if err != nil {
+		return nil, shop.Errorf(shop.ErrInternal, "encode Marketplace search variables: %v", err)
+	}
+
+	return encoded, nil
 }
 
 func parseSearchResponse(raw json.RawMessage) (searchFeed, error) {
