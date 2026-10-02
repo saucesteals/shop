@@ -200,7 +200,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 - `--max-price` — Maximum price in minor units (cents)
 - `--min-rating` — Minimum average rating (e.g. `4.0`)
 - `--category` — Category filter (provider-specific)
-- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city`, `radius`, and `days_since_listed`.
+- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city`, `radius`, `days_since_listed`, and `shipping`.
 
 </details>
 
@@ -217,7 +217,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi --
 shop product 2643088989483257 --store facebook
 ```
 
-`--sort newest` requests Facebook's newest-first feed. `--filter days_since_listed=N` limits results by listing age (1–365 days). Search uses Facebook's native Marketplace GraphQL query with explicit city coordinates, radius, sort, and listing-age variables; the HTML page is only used to discover operation IDs and the city's `buyLocation`. Results include Facebook's Unix `creation_time` as `attributes.creationTime` when available. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
+`--sort newest` uses Facebook's `CREATION_TIME_DESCEND` sort. That feed is strictly recency-ordered only for local pickup; shipping listings scramble it, so newest search disables shipping unless `--filter shipping=true`. `--filter days_since_listed=N` limits results by listing age (1–365 days). Search uses Facebook's native Marketplace GraphQL query with explicit city coordinates, radius, sort, pickup/shipping, and listing-age variables; the HTML page is only used to discover operation IDs and the city's `buyLocation`. Results include Facebook's Unix `creation_time` as `attributes.creationTime` when available. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` only caps the returned page locally and does not change Facebook's cursor boundaries. `hasMore` mirrors Facebook's next-cursor state. `--min-price` and `--max-price` apply.
 
 <details>
 <summary><strong>Example output</strong></summary>

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,17 @@ const (
 )
 
 var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
+
+func boolFilter(raw string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes":
+		return true, nil
+	case "0", "false", "no":
+		return false, nil
+	default:
+		return false, shop.Errorf(shop.ErrInvalidInput, "shipping must be true or false")
+	}
+}
 
 func daysSinceListed(raw string) (int, error) {
 	days, err := strconv.Atoi(strings.TrimSpace(raw))
@@ -152,7 +164,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	for key := range query.Filters {
 		switch key {
-		case "city", "days_since_listed", "radius", "radius_unit":
+		case "city", "days_since_listed", "radius", "radius_unit", "shipping":
 		default:
 			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
 		}
@@ -195,6 +207,14 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		}
 		params.Set("maxPrice", strconv.FormatInt(*query.MaxPrice/100, 10))
 	}
+	newest := query.Sort == shop.SortNewest
+	shipping := !newest
+	if raw := strings.TrimSpace(query.Filters["shipping"]); raw != "" {
+		shipping, err = boolFilter(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if query.MinPrice != nil && query.MaxPrice != nil && *query.MinPrice > *query.MaxPrice {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "min price must not exceed max price")
 	}
@@ -206,7 +226,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if err != nil {
 		return nil, err
 	}
-	search.Variables, err = applySearchVariables(search.Variables, search.Center, radiusKm, query.Sort == shop.SortNewest, daysSince, query.MinPrice, query.MaxPrice)
+	search.Variables, err = applySearchVariables(search.Variables, search.Center, radiusKm, newest, shipping, daysSince, query.MinPrice, query.MaxPrice)
 	if err != nil {
 		return nil, err
 	}
@@ -259,6 +279,11 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	products, outside, unverifiable, malformed, err := s.productsInRadius(ctx, locationDocID, feed.Edges, seenBefore, search.Center, radiusKm)
 	if err != nil {
 		return nil, err
+	}
+	if newest {
+		sort.SliceStable(products, func(i, j int) bool {
+			return creationTime(products[i]) > creationTime(products[j])
+		})
 	}
 	result := &shop.SearchResult{
 		Products: products,
@@ -386,7 +411,7 @@ func marketplaceCreationDays(days int, now time.Time) string {
 	return strings.Join(ids, ";")
 }
 
-func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, newest bool, days int, minPrice, maxPrice *int64) (json.RawMessage, error) {
+func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, newest, shipping bool, days int, minPrice, maxPrice *int64) (json.RawMessage, error) {
 	var root map[string]any
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, shop.Errorf(shop.ErrUpstream, "decode Marketplace search variables: %v", err)
@@ -403,6 +428,8 @@ func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, 
 	browse["filter_location_latitude"] = center.Latitude
 	browse["filter_location_longitude"] = center.Longitude
 	browse["filter_radius_km"] = radiusKm
+	browse["commerce_enable_local_pickup"] = true
+	browse["commerce_enable_shipping"] = shipping
 	if newest {
 		browse["commerce_search_sort_by"] = "CREATION_TIME_DESCEND"
 	}
@@ -486,6 +513,15 @@ func searchVariables(raw json.RawMessage, cursor string) (json.RawMessage, error
 	}
 
 	return encoded, nil
+}
+
+func creationTime(product shop.ProductSummary) int64 {
+	if product.Attributes == nil {
+		return 0
+	}
+	value, _ := product.Attributes["creationTime"].(int64)
+
+	return value
 }
 
 func (s *Store) productsInRadius(ctx context.Context, locationDocID string, edges []searchEdge, excluded map[string]bool, center coordinate, radiusKm int) ([]shop.ProductSummary, int, int, int, error) {
