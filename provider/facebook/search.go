@@ -29,14 +29,14 @@ const (
 
 var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
 
-func boolFilter(raw string) (bool, error) {
+func parseBoolFilter(name, raw string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes":
+	case "1", "true":
 		return true, nil
-	case "0", "false", "no":
+	case "0", "false":
 		return false, nil
 	default:
-		return false, shop.Errorf(shop.ErrInvalidInput, "shipping must be true or false")
+		return false, shop.Errorf(shop.ErrInvalidInput, "%s must be true or false", name)
 	}
 }
 
@@ -53,7 +53,6 @@ type searchPage struct {
 	DocID     string
 	Variables json.RawMessage
 	Center    coordinate
-	Feed      searchFeed
 }
 
 type searchFeed struct {
@@ -184,8 +183,9 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		"query":  {query.Query},
 		"radius": {strconv.Itoa(radiusKm)},
 	}
+	newest := query.Sort == shop.SortNewest
 	daysSince := 0
-	if query.Sort == shop.SortNewest {
+	if newest {
 		params.Set("sortBy", "creation_time_descend")
 	}
 	if raw := strings.TrimSpace(query.Filters["days_since_listed"]); raw != "" {
@@ -207,10 +207,9 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		}
 		params.Set("maxPrice", strconv.FormatInt(*query.MaxPrice/100, 10))
 	}
-	newest := query.Sort == shop.SortNewest
 	shipping := !newest
 	if raw := strings.TrimSpace(query.Filters["shipping"]); raw != "" {
-		shipping, err = boolFilter(raw)
+		shipping, err = parseBoolFilter("shipping", raw)
 		if err != nil {
 			return nil, err
 		}
@@ -226,7 +225,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if err != nil {
 		return nil, err
 	}
-	search.Variables, err = applySearchVariables(search.Variables, search.Center, radiusKm, newest, shipping, daysSince, query.MinPrice, query.MaxPrice)
+	search.Variables, err = applySearchVariables(search.Variables, search.Center, radiusKm, newest, shipping, daysSince, query.MinPrice, query.MaxPrice, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -366,28 +365,6 @@ func parseSearchPage(body []byte) (searchPage, error) {
 		return searchPage{}, shop.Errorf(shop.ErrUpstream, "marketplace search location is invalid")
 	}
 	page.Center = center
-	found := false
-	err = relayData(body, func(raw json.RawMessage) error {
-		if found {
-			return nil
-		}
-		feed, ok, err := parseSearchData(raw)
-		if err != nil {
-			return err
-		}
-		if ok {
-			page.Feed = feed
-			found = true
-		}
-
-		return nil
-	})
-	if err != nil {
-		return searchPage{}, err
-	}
-	if !found {
-		return searchPage{}, shop.Errorf(shop.ErrUpstream, "marketplace search Relay payload missing")
-	}
 
 	return page, nil
 }
@@ -411,7 +388,7 @@ func marketplaceCreationDays(days int, now time.Time) string {
 	return strings.Join(ids, ";")
 }
 
-func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, newest, shipping bool, days int, minPrice, maxPrice *int64) (json.RawMessage, error) {
+func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, newest, shipping bool, days int, minPrice, maxPrice *int64, now time.Time) (json.RawMessage, error) {
 	var root map[string]any
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, shop.Errorf(shop.ErrUpstream, "decode Marketplace search variables: %v", err)
@@ -434,7 +411,7 @@ func applySearchVariables(raw json.RawMessage, center coordinate, radiusKm int, 
 		browse["commerce_search_sort_by"] = "CREATION_TIME_DESCEND"
 	}
 	if days > 0 {
-		browse["commerce_search_and_rp_ctime_days"] = marketplaceCreationDays(days, time.Now())
+		browse["commerce_search_and_rp_ctime_days"] = marketplaceCreationDays(days, now)
 	}
 	if minPrice != nil {
 		browse["filter_price_lower_bound"] = *minPrice / 100
