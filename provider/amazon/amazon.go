@@ -39,6 +39,7 @@ var supportedDomains = map[string]amazonDomain{
 	"amazon.com":    {Name: "Amazon US", Country: "US", Currency: "USD", MarketplaceID: "ATVPDKIKX0DER"},
 	"amazon.co.uk":  {Name: "Amazon UK", Country: "GB", Currency: "GBP", MarketplaceID: "A1F83G8C2ARO7P"},
 	"amazon.de":     {Name: "Amazon DE", Country: "DE", Currency: "EUR", MarketplaceID: "A1PA6795UKMFR9"},
+	"amazon.fr":     {Name: "Amazon FR", Country: "FR", Currency: "EUR", MarketplaceID: "A13V1IB3VIYZZH"},
 	"amazon.co.jp":  {Name: "Amazon JP", Country: "JP", Currency: "JPY", MarketplaceID: "A1VC38T7YXB528"},
 	"amazon.ca":     {Name: "Amazon CA", Country: "CA", Currency: "CAD", MarketplaceID: "A2EUQ1WTGCTBG2"},
 	"amazon.com.au": {Name: "Amazon AU", Country: "AU", Currency: "AUD", MarketplaceID: "A39IBJ37TRP1C6"},
