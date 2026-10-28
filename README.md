@@ -46,8 +46,8 @@ Commands output structured JSON by default. Same interface regardless of store. 
 | Filters, sorting, pagination, price ranges, ratings | Specs, features, images, descriptions, seller info | Every color, size, and configuration mapped to ASINs |
 | ⭐ **Customer Reviews**                             | 🏷️ **Multi-Seller Offers**                         | 🛒 **Cart Management**                               |
 | Sort by recent/helpful/rating, filter by stars      | All available sellers, conditions, and prices      | Add, remove, view, clear — full cart lifecycle       |
-| 💳 **Real Checkout**                                | 📍 **Address & Payment**                           | 🌍 **6 Amazon Regions**                              |
-| Preview orders, auto-select fastest shipping        | List saved addresses and payment methods           | US, UK, DE, JP, CA, AU — same binary                 |
+| 💳 **Real Checkout**                                | 📍 **Address & Payment**                           | 🌍 **7 Amazon Regions**                              |
+| Preview orders, auto-select fastest shipping        | List saved addresses and payment methods           | US, UK, DE, FR, JP, CA, AU — same binary                 |
 
 ---
 
@@ -707,13 +707,14 @@ To add a tracking provider, implement the interface and include it in the applic
 
 ### Amazon
 
-6 regions, full feature support:
+7 regions, full feature support:
 
 | Store        | Domain          | Currency |
 | :----------- | :-------------- | :------- |
 | 🇺🇸 Amazon US | `amazon.com`    | USD      |
 | 🇬🇧 Amazon UK | `amazon.co.uk`  | GBP      |
 | 🇩🇪 Amazon DE | `amazon.de`     | EUR      |
+| 🇫🇷 Amazon FR | `amazon.fr`     | EUR      |
 | 🇯🇵 Amazon JP | `amazon.co.jp`  | JPY      |
 | 🇨🇦 Amazon CA | `amazon.ca`     | CAD      |
 | 🇦🇺 Amazon AU | `amazon.com.au` | AUD      |
@@ -721,6 +722,7 @@ To add a tracking provider, implement the interface and include it in the applic
 ```bash
 shop search "coffee" --store amazon.co.jp
 shop search "kaffee" --store amazon.de
+shop search "café" --store amazon.fr
 ```
 
 More providers coming. The `shop.Provider` interface is all you need to add one.
