@@ -14,11 +14,9 @@ import (
 var priceRe = regexp.MustCompile(`[$£€¥]\s*([\d.,]+)|([\d.,]+)\s*[$£€¥]`)
 
 // parsePriceCents converts a formatted price string to minor currency units
-// (cents for USD/GBP/EUR/CAD/AUD, whole yen for JPY). The currency
-// parameter controls decimal separator handling:
-//   - EUR: comma is decimal separator ("29,99" → 2999, "1.234,56" → 123456)
-//   - JPY: no minor units ("2,999" → 2999)
-//   - USD/GBP/CAD/AUD: period is decimal separator ("29.99" → 2999)
+// (cents for USD/GBP/EUR/CAD/AUD, whole yen for JPY). The decimal separator
+// is detected from the string itself, so both "€2,243.99" and "2.243,99 €"
+// give 224399. JPY has no minor units ("2,999" → 2999).
 //
 // Returns 0 if the string is empty or unparseable.
 func parsePriceCents(s string, currency string) int64 {
@@ -60,30 +58,28 @@ func parsePriceCents(s string, currency string) int64 {
 		return yen
 	}
 
-	// EUR: period is thousands separator, comma is decimal.
-	// "1.234,56" → "1234.56"
-	if currency == "EUR" {
-		num = strings.ReplaceAll(num, ".", "")
-		num = strings.Replace(num, ",", ".", 1)
-	} else {
-		// Standard format: comma is thousands separator, period is decimal.
-		num = strings.ReplaceAll(num, ",", "")
+	// The decimal separator is whichever of '.' or ',' comes last with one
+	// or two digits after it; every other separator groups thousands. This
+	// does not depend on the currency: under the en-US Accept-Language this
+	// client sends, amazon.fr and amazon.de format EUR as "€2,243.99".
+	var frac string
+	if i := strings.LastIndexAny(num, ".,"); i >= 0 && len(num)-i-1 >= 1 && len(num)-i-1 <= 2 {
+		frac = num[i+1:]
+		num = num[:i]
 	}
+	num = strings.NewReplacer(".", "", ",", "").Replace(num)
 
-	parts := strings.SplitN(num, ".", 2)
-
-	major, err := strconv.ParseInt(parts[0], 10, 64)
+	major, err := strconv.ParseInt(num, 10, 64)
 	if err != nil {
 		return 0
 	}
 
 	var minor int64
-	if len(parts) == 2 {
-		c := parts[1]
-		if len(c) == 1 {
-			c += "0"
+	if frac != "" {
+		if len(frac) == 1 {
+			frac += "0"
 		}
-		minor, _ = strconv.ParseInt(c, 10, 64)
+		minor, _ = strconv.ParseInt(frac, 10, 64)
 	}
 
 	return major*100 + minor
