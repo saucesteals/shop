@@ -72,10 +72,17 @@ func (p marketplacePlace) key() string {
 		return p.CityPageID
 	}
 
-	return strings.ToLower(strings.TrimSpace(p.City + "," + p.State))
+	if strings.TrimSpace(p.City) == "" {
+		return strings.ToLower(strings.TrimSpace(p.DisplayName))
+	}
+
+	return strings.ToLower(strings.TrimSpace(p.City) + "," + strings.TrimSpace(p.State))
 }
 
 func (p marketplacePlace) query() string {
+	if strings.TrimSpace(p.City) == "" {
+		return strings.TrimSpace(p.DisplayName)
+	}
 	if p.State == "" {
 		return p.City
 	}
@@ -85,7 +92,7 @@ func (p marketplacePlace) query() string {
 
 func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketplacePlace) (coordinate, error) {
 	key := place.key()
-	if key == "" {
+	if key == "" || strings.TrimSpace(place.query()) == "" {
 		return coordinate{}, shop.Errorf(shop.ErrNotFound, "marketplace listing location is missing")
 	}
 	s.cacheMu.RLock()
@@ -96,7 +103,15 @@ func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketp
 	}
 	s.cacheMu.RUnlock()
 
-	point, err := s.fetchPlaceCoordinate(ctx, docID, place)
+	point, err := s.fetchPlaceCoordinate(ctx, docID, place, place.query())
+	// The reverse-geocoded municipality can differ from the attached city page
+	// (for example, Newtown versus Palestine, Connecticut). Resolve the page's
+	// own label when the municipality lookup cannot verify it. This also handles
+	// typeahead misses for abbreviated states without guessing a city identity.
+	displayName := strings.TrimSpace(place.DisplayName)
+	if shop.IsNotFound(err) && displayName != "" && !strings.EqualFold(displayName, strings.TrimSpace(place.query())) {
+		point, err = s.fetchPlaceCoordinate(ctx, docID, place, displayName)
+	}
 	if err != nil {
 		return coordinate{}, err
 	}
@@ -107,7 +122,7 @@ func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketp
 	return point, nil
 }
 
-func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place marketplacePlace) (coordinate, error) {
+func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place marketplacePlace, query string) (coordinate, error) {
 	if docID == "" {
 		return coordinate{}, shop.Errorf(shop.ErrUpstream, "marketplace location operation missing")
 	}
@@ -116,7 +131,7 @@ func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place ma
 			Caller:              "MARKETPLACE",
 			IntegrationStrategy: "STRING_MATCH",
 			PageCategory:        []string{"CITY", "SUBCITY", "NEIGHBORHOOD", "POSTAL_CODE"},
-			Query:               place.query(),
+			Query:               query,
 			SearchType:          "PLACE_TYPEAHEAD",
 		},
 	})
