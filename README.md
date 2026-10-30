@@ -210,6 +210,8 @@ Anonymous search and listing details. No login, cart, or checkout.
 
 Results are scoped to a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. Because search results expose a Marketplace city rather than exact seller coordinates, `shop` applies a best-effort city-center distance check and includes `attributes.distanceKm`. Listings whose city center is outside the requested radius are removed, but the radius is approximate near city boundaries.
 
+City resolution searches the attached city-page display name first, then the municipality name if needed, and accepts only coordinates for the exact attached city-page ID. Names select search candidates, never identity: a listing can name Newtown while referencing the Palestine, Connecticut city page. Listings without a city-page ID or a verified coordinate match are omitted individually with a warning; valid listings and native pagination are retained. Successful lookups are cached by city-page ID. Network, authentication, and rate-limit failures remain errors, not empty results.
+
 ```bash
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 shop search "desk" --store facebook --sort newest --filter city=austin --filter days_since_listed=1

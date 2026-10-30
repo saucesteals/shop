@@ -68,14 +68,13 @@ func (l *listing) place() marketplacePlace {
 }
 
 func (p marketplacePlace) key() string {
-	if p.CityPageID != "" {
-		return p.CityPageID
-	}
-
-	return strings.ToLower(strings.TrimSpace(p.City + "," + p.State))
+	return p.CityPageID
 }
 
 func (p marketplacePlace) query() string {
+	if strings.TrimSpace(p.City) == "" {
+		return strings.TrimSpace(p.DisplayName)
+	}
 	if p.State == "" {
 		return p.City
 	}
@@ -85,7 +84,7 @@ func (p marketplacePlace) query() string {
 
 func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketplacePlace) (coordinate, error) {
 	key := place.key()
-	if key == "" {
+	if key == "" || strings.TrimSpace(place.query()) == "" {
 		return coordinate{}, shop.Errorf(shop.ErrNotFound, "marketplace listing location is missing")
 	}
 	s.cacheMu.RLock()
@@ -96,7 +95,17 @@ func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketp
 	}
 	s.cacheMu.RUnlock()
 
-	point, err := s.fetchPlaceCoordinate(ctx, docID, place)
+	// Search by the attached page's label first, but accept only its exact ID.
+	// Municipality names can differ from the page (Newtown versus Palestine).
+	query := strings.TrimSpace(place.DisplayName)
+	municipality := strings.TrimSpace(place.query())
+	if query == "" {
+		query = municipality
+	}
+	point, err := s.fetchPlaceCoordinate(ctx, docID, place, query)
+	if shop.IsNotFound(err) && municipality != "" && !strings.EqualFold(query, municipality) {
+		point, err = s.fetchPlaceCoordinate(ctx, docID, place, municipality)
+	}
 	if err != nil {
 		return coordinate{}, err
 	}
@@ -107,7 +116,7 @@ func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketp
 	return point, nil
 }
 
-func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place marketplacePlace) (coordinate, error) {
+func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place marketplacePlace, query string) (coordinate, error) {
 	if docID == "" {
 		return coordinate{}, shop.Errorf(shop.ErrUpstream, "marketplace location operation missing")
 	}
@@ -116,7 +125,7 @@ func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place ma
 			Caller:              "MARKETPLACE",
 			IntegrationStrategy: "STRING_MATCH",
 			PageCategory:        []string{"CITY", "SUBCITY", "NEIGHBORHOOD", "POSTAL_CODE"},
-			Query:               place.query(),
+			Query:               query,
 			SearchType:          "PLACE_TYPEAHEAD",
 		},
 	})
@@ -151,16 +160,6 @@ func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place ma
 	for _, edge := range edges {
 		point, ok := edge.Node.Location.coordinate()
 		if place.CityPageID != "" && edge.Node.Page.ID == place.CityPageID && ok {
-			return point, nil
-		}
-	}
-	wanted := strings.ToLower(strings.TrimSpace(place.DisplayName))
-	if wanted == "" {
-		wanted = strings.ToLower(strings.TrimSpace(place.query()))
-	}
-	for _, edge := range edges {
-		point, ok := edge.Node.Location.coordinate()
-		if strings.EqualFold(strings.TrimSpace(edge.Node.Address), wanted) && ok {
 			return point, nil
 		}
 	}
