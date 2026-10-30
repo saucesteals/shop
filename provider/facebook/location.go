@@ -68,15 +68,7 @@ func (l *listing) place() marketplacePlace {
 }
 
 func (p marketplacePlace) key() string {
-	if p.CityPageID != "" {
-		return p.CityPageID
-	}
-
-	if strings.TrimSpace(p.City) == "" {
-		return strings.ToLower(strings.TrimSpace(p.DisplayName))
-	}
-
-	return strings.ToLower(strings.TrimSpace(p.City) + "," + strings.TrimSpace(p.State))
+	return p.CityPageID
 }
 
 func (p marketplacePlace) query() string {
@@ -103,14 +95,16 @@ func (s *Store) placeCoordinate(ctx context.Context, docID string, place marketp
 	}
 	s.cacheMu.RUnlock()
 
-	point, err := s.fetchPlaceCoordinate(ctx, docID, place, place.query())
-	// The reverse-geocoded municipality can differ from the attached city page
-	// (for example, Newtown versus Palestine, Connecticut). Resolve the page's
-	// own label when the municipality lookup cannot verify it. This also handles
-	// typeahead misses for abbreviated states without guessing a city identity.
-	displayName := strings.TrimSpace(place.DisplayName)
-	if shop.IsNotFound(err) && displayName != "" && !strings.EqualFold(displayName, strings.TrimSpace(place.query())) {
-		point, err = s.fetchPlaceCoordinate(ctx, docID, place, displayName)
+	// Search by the attached page's label first, but accept only its exact ID.
+	// Municipality names can differ from the page (Newtown versus Palestine).
+	query := strings.TrimSpace(place.DisplayName)
+	municipality := strings.TrimSpace(place.query())
+	if query == "" {
+		query = municipality
+	}
+	point, err := s.fetchPlaceCoordinate(ctx, docID, place, query)
+	if shop.IsNotFound(err) && municipality != "" && !strings.EqualFold(query, municipality) {
+		point, err = s.fetchPlaceCoordinate(ctx, docID, place, municipality)
 	}
 	if err != nil {
 		return coordinate{}, err
@@ -166,16 +160,6 @@ func (s *Store) fetchPlaceCoordinate(ctx context.Context, docID string, place ma
 	for _, edge := range edges {
 		point, ok := edge.Node.Location.coordinate()
 		if place.CityPageID != "" && edge.Node.Page.ID == place.CityPageID && ok {
-			return point, nil
-		}
-	}
-	wanted := strings.ToLower(strings.TrimSpace(place.DisplayName))
-	if wanted == "" {
-		wanted = strings.ToLower(strings.TrimSpace(place.query()))
-	}
-	for _, edge := range edges {
-		point, ok := edge.Node.Location.coordinate()
-		if strings.EqualFold(strings.TrimSpace(edge.Node.Address), wanted) && ok {
 			return point, nil
 		}
 	}
