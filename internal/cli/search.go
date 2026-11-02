@@ -9,6 +9,7 @@ import (
 func (c *CLI) newSearchCmd() *cobra.Command {
 	var (
 		page      int
+		cursor    string
 		pageSize  int
 		sortBy    string
 		minPrice  int64
@@ -30,11 +31,15 @@ func (c *CLI) newSearchCmd() *cobra.Command {
 			defer cancel()
 
 			q := &shop.SearchQuery{
+				Cursor:   cursor,
 				Query:    args[0],
 				Page:     page,
 				PageSize: pageSize,
 				Sort:     shop.SearchSort(sortBy),
 				Category: category,
+			}
+			if cursor != "" && !cmd.Flags().Changed("page") {
+				q.Page = 0
 			}
 
 			if cmd.Flags().Changed("min-price") {
@@ -62,6 +67,7 @@ func (c *CLI) newSearchCmd() *cobra.Command {
 
 	f := cmd.Flags()
 	f.IntVar(&page, "page", 1, "page number")
+	f.StringVar(&cursor, "cursor", "", "search continuation token (provider-specific)")
 	f.IntVar(&pageSize, "page-size", 0, "results per page")
 	f.StringVar(&sortBy, "sort", "", "sort: relevance|price_low|price_high|rating|newest|best_seller")
 	f.Int64Var(&minPrice, "min-price", 0, "minimum price in cents")

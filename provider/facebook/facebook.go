@@ -3,7 +3,6 @@ package facebook
 import (
 	"context"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
@@ -71,8 +70,8 @@ func (p *Provider) Store(_ context.Context, handle, _ string) (shop.Store, error
 // Marketplace transport. The supplied client is copied and never mutated.
 //
 // Marketplace requests do not follow redirects so authentication redirects can
-// be reported to callers. When client has no cookie jar, New creates a private
-// anonymous jar for the store.
+// be reported to callers. Cookie persistence is disabled, including when the
+// supplied client has a cookie jar.
 func New(client *http.Client) (*Store, error) {
 	if client == nil {
 		client = &http.Client{
@@ -87,13 +86,7 @@ func New(client *http.Client) (*Store, error) {
 	if client.Timeout == 0 {
 		client.Timeout = httpTimeout
 	}
-	if client.Jar == nil {
-		jar, err := cookiejar.New(nil)
-		if err != nil {
-			return nil, shop.Errorf(shop.ErrInternal, "create anonymous Marketplace cookie jar: %v", err)
-		}
-		client.Jar = jar
-	}
+	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 	return &Store{
