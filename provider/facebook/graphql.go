@@ -51,7 +51,7 @@ func (s *Store) graphQL(ctx context.Context, docID, queryName string, variables 
 		resp.StatusCode >= 300 && resp.StatusCode < 400 && (strings.Contains(location, "/login") || strings.Contains(location, "/checkpoint")):
 		return nil, shop.Errorf(shop.ErrAuthRequired, "marketplace requires authentication")
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return nil, shop.Errorf(shop.ErrRateLimited, "marketplace rate limited")
+		return nil, shop.Errorf(shop.ErrRateLimited, "marketplace GraphQL %s rate limited (HTTP 429)", queryName)
 	case resp.StatusCode != http.StatusOK:
 		return nil, shop.Errorf(shop.ErrUpstream, "marketplace GraphQL returned HTTP %d", resp.StatusCode)
 	}
@@ -91,7 +91,7 @@ func (s *Store) graphQL(ctx context.Context, docID, queryName string, variables 
 	if len(envelope.Errors) > 0 {
 		failure := envelope.Errors[0]
 		if failure.Code == 1675004 || strings.Contains(strings.ToLower(failure.Message), "rate limit") {
-			return nil, shop.Errorf(shop.ErrRateLimited, "marketplace GraphQL rate limited")
+			return nil, shop.Errorf(shop.ErrRateLimited, "marketplace GraphQL %s rate limited (HTTP %d, code %d)", queryName, resp.StatusCode, failure.Code)
 		}
 		return nil, shop.Errorf(shop.ErrUpstream, "marketplace GraphQL: %s", failure.Message)
 	}

@@ -196,6 +196,7 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 - `--sort` — `relevance`, `price_low`, `price_high`, `rating`, `newest`, `best_seller`
 - `--page` — Page number (default 1)
 - `--page-size` — Results per page
+- `--cursor` — Optional continuation token; support and pagination constraints are validated by the provider
 - `--min-price` — Minimum price in minor units (cents)
 - `--max-price` — Maximum price in minor units (cents)
 - `--min-rating` — Minimum average rating (e.g. `4.0`)
@@ -205,6 +206,10 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 </details>
 
 ### Facebook Marketplace
+
+Search responses include `nextCursor` when another native batch is available. Pass it with `--cursor` and the same query, sort, and filters to continue without replaying earlier result batches. Do not combine a cursor with `--page`; cursor responses use `page: 0` because the native token does not identify a page number. Numbered pagination remains supported. Each call still loads the search document for current request metadata. Callers combining batches should deduplicate listing IDs and stop when `hasMore` is false. Leave `--page-size` unset to retain every result in each native batch.
+
+The Go API exposes the same optional fields as `SearchQuery.Cursor` and `SearchResult.NextCursor`. Providers that do not support search cursors return `not_supported`. The Facebook client does not persist cookies, including when a supplied HTTP client has a cookie jar.
 
 Anonymous search and listing details. No login, cart, or checkout.
 

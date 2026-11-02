@@ -40,6 +40,10 @@ func mapSearchSort(s shop.SearchSort) string {
 // are not obtainable through iOS code-pair auth. Mobile web search works
 // with any valid session cookies and returns the same catalog results.
 func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.SearchResult, error) {
+	if query != nil && query.Cursor != "" {
+		return nil, shop.Errorf(shop.ErrNotSupported, "amazon search does not support cursor pagination")
+	}
+
 	api, err := s.tvssAPI()
 	if err != nil {
 		return nil, err

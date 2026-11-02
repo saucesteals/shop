@@ -2,6 +2,9 @@ package shop
 
 // SearchQuery defines what to search for and how to filter/sort results.
 type SearchQuery struct {
+	// Cursor continues a provider-supported search with the same query and filters.
+	// Providers validate cursor support and conflicts with numbered pagination.
+	Cursor    string            `json:"cursor,omitempty"`
 	Query     string            `json:"query"`
 	Page      int               `json:"page,omitempty"`
 	PageSize  int               `json:"pageSize,omitempty"`
@@ -27,12 +30,14 @@ const (
 
 // SearchResult is a paginated list of product summaries.
 type SearchResult struct {
-	Products []ProductSummary `json:"products"`
-	Count    int              `json:"count"`
-	Page     int              `json:"page"`
-	HasMore  bool             `json:"hasMore"`
-	Filters  []SearchFilter   `json:"filters,omitempty"`
-	Warnings []string         `json:"warnings,omitempty"`
+	// NextCursor is an opaque continuation token, when supported by the provider.
+	NextCursor string           `json:"nextCursor,omitempty"`
+	Products   []ProductSummary `json:"products"`
+	Count      int              `json:"count"`
+	Page       int              `json:"page"`
+	HasMore    bool             `json:"hasMore"`
+	Filters    []SearchFilter   `json:"filters,omitempty"`
+	Warnings   []string         `json:"warnings,omitempty"`
 }
 
 // SearchFilter describes a filterable facet returned by the store (e.g.,

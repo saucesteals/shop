@@ -155,6 +155,9 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if query.Page < 0 || query.PageSize < 0 {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "page and page size must not be negative")
 	}
+	if query.Cursor != "" && query.Page != 0 {
+		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace cursor and page cannot be combined")
+	}
 	if query.PageSize > 100 {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace page size must be between 1 and 100")
 	}
@@ -229,16 +232,27 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if err != nil {
 		return nil, err
 	}
-	feed, err := s.searchFeed(ctx, search.DocID, searchQueryName, search.Variables)
-	if err != nil {
-		return nil, err
-	}
 	paginationDocID := ""
-	if page > 1 {
+	if page > 1 || query.Cursor != "" {
 		paginationDocID, err = s.operationID(ctx, body, searchContentComponent, searchPaginationOperation)
 		if err != nil {
 			return nil, err
 		}
+	}
+	docID, operation, variables := search.DocID, searchQueryName, search.Variables
+	if query.Cursor != "" {
+		docID, operation = paginationDocID, searchPaginationQuery
+		variables, err = searchVariables(search.Variables, query.Cursor)
+		if err != nil {
+			return nil, err
+		}
+	}
+	feed, err := s.searchFeed(ctx, docID, operation, variables)
+	if err != nil {
+		return nil, err
+	}
+	if query.Cursor != "" && feed.PageInfo.HasNextPage && feed.PageInfo.EndCursor == query.Cursor {
+		return nil, shop.Errorf(shop.ErrUpstream, "marketplace repeated its pagination cursor")
 	}
 	seenBefore := make(map[string]bool)
 	seenCursors := make(map[string]bool)
@@ -289,6 +303,16 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		Page:     page,
 		HasMore:  feed.PageInfo.HasNextPage,
 		Warnings: distanceWarnings(),
+	}
+	if query.Cursor != "" {
+		// A native cursor does not encode a reliable numbered-page position.
+		result.Page = 0
+	}
+	if feed.PageInfo.HasNextPage {
+		if feed.PageInfo.EndCursor == "" {
+			return nil, shop.Errorf(shop.ErrUpstream, "marketplace omitted its pagination cursor")
+		}
+		result.NextCursor = feed.PageInfo.EndCursor
 	}
 	if outside > 0 {
 		result.Warnings = append(result.Warnings, countWarning(outside, "listing outside the requested city-center radius was removed", "listings outside the requested city-center radius were removed"))
