@@ -63,12 +63,12 @@ saved JSON formatting preferences.
 shop search "protein powder"
 shop search "usb-c cable" --sort price_low --page 2
 shop search "headphones" --min-price 2000 --max-price 10000 --min-rating 4.0
-shop search "desk" --store facebook --filter city=austin --filter radius=15mi
+shop search "desk" --store facebook --filter latitude=30.2677 --filter longitude=-97.7475 --filter radius=15mi
 ```
 
 Flags: `--sort` (relevance|price_low|price_high|rating|newest|best_seller), `--page`, `--page-size`, `--min-price`, `--max-price` (cents), `--min-rating`, `--category`, `--filter key=value` (repeatable)
 
-Facebook Marketplace: `--store facebook --filter city=<slug>` (`austin`, `nyc`, `sanfrancisco`). Optional `--filter radius=` (miles, or `km` suffix). Use `--sort newest` for the newest local-pickup feed (shipping is off unless `--filter shipping=true`) and `--filter days_since_listed=N` to limit listing age to 1–365 days. Search uses native Marketplace GraphQL with explicit city coordinates, radius, sort, and listing-age variables. Search results include `attributes.location`, Facebook's Unix `attributes.creationTime` when available, and best-effort city-center `attributes.distanceKm`; exact seller coordinates are not exposed, so radius filtering is approximate near city boundaries. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` caps a page locally without changing cursor boundaries, and `hasMore` mirrors Facebook's next-cursor state. `--min-price` / `--max-price` work. No cart or checkout.
+Facebook Marketplace: `--store facebook --filter latitude=<latitude> --filter longitude=<longitude>`. Both coordinates are required; `city` is no longer supported. Search is stateless and uses one GraphQL request per native batch, with no HTML bootstrap, JavaScript discovery, or provider caches. Optional `--filter radius=` (miles, or `km` suffix). Use `--sort newest` for the newest local-pickup feed (shipping is off unless `--filter shipping=true`) and `--filter days_since_listed=N` to limit listing age to 1–365 days. Search uses native Marketplace GraphQL with explicit city coordinates, radius, sort, and listing-age variables. Search results include `attributes.location`, Facebook's Unix `attributes.creationTime` when available, with no independent distance verification. Radius is requested upstream; Facebook may include outside-radius recommendations. No `attributes.distanceKm` is supplied. `--page` follows Facebook's native cursor batches using `loadNext(24)`. `--page-size` caps a page locally without changing cursor boundaries, and `hasMore` mirrors Facebook's next-cursor state. `--min-price` / `--max-price` work. No cart or checkout.
 
 Response: `.products[]` has id, title, price, rating, url, badge, availability. `.hasMore` for pagination.
 
@@ -345,4 +345,4 @@ Show 2–3 reviews max by default, top helpful first.
 - Cart state is per-store, persisted locally. `cart clear` before starting a new purchase flow.
 - Amazon only returns the buy-box offer from `offers` (single seller). Other providers may differ.
 - `checkout` returns a `checkoutId` tied to cart state — if anything changes, re-checkout.
-- Facebook Marketplace is read-only. Search requires `--filter city=` with a Facebook city slug.
+- Facebook Marketplace is read-only. Search requires paired `--filter latitude=` and `--filter longitude=`; city-slug lookup is not supported. Product details still read HTML.

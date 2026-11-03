@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/saucesteals/shop"
 )
@@ -67,21 +65,6 @@ type pageInfo struct {
 	HasNextPage bool   `json:"has_next_page"`
 }
 
-func marketplaceCity(raw string) (string, error) {
-	slug := strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) {
-			return unicode.ToLower(r)
-		}
-
-		return -1
-	}, raw)
-	if slug == "" || len(slug) > 40 {
-		return "", shop.Errorf(shop.ErrInvalidInput, "marketplace city must be a Facebook city slug such as austin or nyc")
-	}
-
-	return slug, nil
-}
-
 func parseRadiusKm(raw, unit string) (int, error) {
 	match := radiusValue.FindStringSubmatch(strings.ReplaceAll(raw, " ", ""))
 	if match == nil {
@@ -119,31 +102,23 @@ func parseRadiusKm(raw, unit string) (int, error) {
 	return rounded, nil
 }
 
-func searchCityRadius(filters map[string]string) (string, int, error) {
-	city := strings.TrimSpace(filters["city"])
+func searchRadius(filters map[string]string) (int, error) {
 	var err error
-	if city != "" {
-		city, err = marketplaceCity(city)
-		if err != nil {
-			return "", 0, err
-		}
-	}
 	radiusKm := defaultRadiusKm
 	if raw := strings.ToLower(strings.TrimSpace(filters["radius"])); raw != "" {
 		radiusKm, err = parseRadiusKm(raw, strings.ToLower(strings.TrimSpace(filters["radius_unit"])))
 		if err != nil {
-			return "", 0, err
+			return 0, err
 		}
 	} else if strings.TrimSpace(filters["radius_unit"]) != "" {
-		return "", 0, shop.Errorf(shop.ErrInvalidInput, "radius_unit requires radius")
+		return 0, shop.Errorf(shop.ErrInvalidInput, "radius_unit requires radius")
 	}
 
-	return city, radiusKm, nil
+	return radiusKm, nil
 }
 
-// Search returns one native Marketplace page. Explicit coordinates avoid HTML
-// discovery; city slugs resolve through a search document on each call.
-// No bootstrap, operation, or listing state is retained between calls.
+// Search returns one native Marketplace page for explicit coordinates.
+// Requests require no HTML discovery or retained provider state.
 func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.SearchResult, error) {
 	if query == nil || strings.TrimSpace(query.Query) == "" {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace search query is required")
@@ -162,12 +137,12 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	for key := range query.Filters {
 		switch key {
-		case "city", "latitude", "longitude", "days_since_listed", "radius", "radius_unit", "shipping":
+		case "latitude", "longitude", "days_since_listed", "radius", "radius_unit", "shipping":
 		default:
 			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
 		}
 	}
-	city, radiusKm, err := searchCityRadius(query.Filters)
+	radiusKm, err := searchRadius(query.Filters)
 	if err != nil {
 		return nil, err
 	}
@@ -178,33 +153,23 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if page > 100 {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace page must be between 1 and 100")
 	}
-	params := url.Values{
-		"query":  {query.Query},
-		"radius": {strconv.Itoa(radiusKm)},
-	}
 	newest := query.Sort == shop.SortNewest
 	daysSince := 0
-	if newest {
-		params.Set("sortBy", "creation_time_descend")
-	}
 	if raw := strings.TrimSpace(query.Filters["days_since_listed"]); raw != "" {
 		daysSince, err = daysSinceListed(raw)
 		if err != nil {
 			return nil, err
 		}
-		params.Set("daysSinceListed", strconv.Itoa(daysSince))
 	}
 	if query.MinPrice != nil {
 		if *query.MinPrice < 0 {
 			return nil, shop.Errorf(shop.ErrInvalidInput, "min price must not be negative")
 		}
-		params.Set("minPrice", strconv.FormatInt(*query.MinPrice/100, 10))
 	}
 	if query.MaxPrice != nil {
 		if *query.MaxPrice < 0 {
 			return nil, shop.Errorf(shop.ErrInvalidInput, "max price must not be negative")
 		}
-		params.Set("maxPrice", strconv.FormatInt(*query.MaxPrice/100, 10))
 	}
 	shipping := !newest
 	if raw := strings.TrimSpace(query.Filters["shipping"]); raw != "" {
@@ -216,7 +181,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if query.MinPrice != nil && query.MaxPrice != nil && *query.MinPrice > *query.MaxPrice {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "min price must not exceed max price")
 	}
-	search, err := s.searchPage(ctx, city, params, query)
+	search, err := buildSearchPage(query)
 	if err != nil {
 		return nil, err
 	}
@@ -315,51 +280,6 @@ func distanceWarnings() []string {
 		"Search listing currencies may be omitted by Facebook; USD is assumed.",
 		"Location and radius are requested from Facebook; results may include outside-radius recommendations and are not independently filtered.",
 	}
-}
-
-func parseSearchPage(body []byte) (searchPage, error) {
-	var page searchPage
-	err := jsonObjects(body, func(raw json.RawMessage) error {
-		if page.DocID != "" {
-			return nil
-		}
-		var preloader struct {
-			QueryName string          `json:"queryName"`
-			QueryID   string          `json:"queryID"`
-			Variables json.RawMessage `json:"variables"`
-		}
-		if err := json.Unmarshal(raw, &preloader); err != nil {
-			return shop.Errorf(shop.ErrUpstream, "decode Marketplace preloader: %v", err)
-		}
-		if preloader.QueryName == searchQueryName && preloader.QueryID != "" && len(preloader.Variables) > 0 {
-			page.DocID = preloader.QueryID
-			page.Variables = append(json.RawMessage(nil), preloader.Variables...)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return searchPage{}, err
-	}
-	if page.DocID == "" || len(page.Variables) == 0 {
-		return searchPage{}, shop.Errorf(shop.ErrUpstream, "marketplace search preloader missing")
-	}
-	var variables struct {
-		BuyLocation *optionalCoordinate `json:"buyLocation"`
-	}
-	if err := json.Unmarshal(page.Variables, &variables); err != nil {
-		return searchPage{}, shop.Errorf(shop.ErrUpstream, "decode Marketplace search variables: %v", err)
-	}
-	if variables.BuyLocation == nil {
-		return searchPage{}, shop.Errorf(shop.ErrUpstream, "marketplace search location missing")
-	}
-	center, ok := variables.BuyLocation.coordinate()
-	if !ok {
-		return searchPage{}, shop.Errorf(shop.ErrUpstream, "marketplace search location is invalid")
-	}
-	page.Center = center
-
-	return page, nil
 }
 
 func (s *Store) searchFeed(ctx context.Context, docID, queryName string, variables json.RawMessage) (searchFeed, error) {

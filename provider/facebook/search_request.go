@@ -1,9 +1,7 @@
 package facebook
 
 import (
-	"context"
 	"encoding/json"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -14,38 +12,28 @@ import (
 // These are versioned protocol constants, not per-session state.
 const searchDocumentID = "28698615193166509"
 
-func (s *Store) searchPage(ctx context.Context, city string, params url.Values, query *shop.SearchQuery) (searchPage, error) {
+func buildSearchPage(query *shop.SearchQuery) (searchPage, error) {
 	lat, hasLat := query.Filters["latitude"]
 	lon, hasLon := query.Filters["longitude"]
-	if hasLat || hasLon {
-		if !hasLat || !hasLon || city != "" {
-			return searchPage{}, shop.Errorf(shop.ErrInvalidInput, "supply latitude and longitude together, without city")
-		}
-		latitude, errLat := strconv.ParseFloat(strings.TrimSpace(lat), 64)
-		longitude, errLon := strconv.ParseFloat(strings.TrimSpace(lon), 64)
-		center := coordinate{Latitude: latitude, Longitude: longitude}
-		if errLat != nil || errLon != nil || !center.valid() {
-			return searchPage{}, shop.Errorf(shop.ErrInvalidInput, "invalid marketplace coordinates")
-		}
-		variables := directSearchVariables{Count: 24, Scale: 1, BuyLocation: center, SavedSearchQuery: query.Query, IncludePopular: true}
-		variables.Params.BQF.Callsite = "COMMERCE_MKTPLACE_SEO_USERS"
-		variables.Params.BQF.Query = query.Query
-		variables.Params.Browse = json.RawMessage(`{"commerce_search_and_rp_available":true,"commerce_search_and_rp_category_id":[],"filter_price_lower_bound":0,"filter_price_upper_bound":214748364700}`)
-		variables.Params.Custom = json.RawMessage(`{"surface":"SEARCH","search_vertical":"C2C","contextual_filters":[],"virtual_contextual_filters":[],"serp_landing_settings":{"virtual_category_id":""}}`)
-		raw, err := json.Marshal(variables)
-		if err != nil {
-			return searchPage{}, shop.Errorf(shop.ErrInternal, "encode marketplace search: %v", err)
-		}
-		return searchPage{DocID: searchDocumentID, Variables: raw, Center: center}, nil
+	if !hasLat || !hasLon {
+		return searchPage{}, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires latitude and longitude")
 	}
-	if city == "" {
-		return searchPage{}, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires city or latitude and longitude")
+	latitude, errLat := strconv.ParseFloat(strings.TrimSpace(lat), 64)
+	longitude, errLon := strconv.ParseFloat(strings.TrimSpace(lon), 64)
+	center := coordinate{Latitude: latitude, Longitude: longitude}
+	if errLat != nil || errLon != nil || !center.valid() {
+		return searchPage{}, shop.Errorf(shop.ErrInvalidInput, "invalid marketplace coordinates")
 	}
-	body, err := s.document(ctx, "/marketplace/"+city+"/search/?"+params.Encode())
+	variables := directSearchVariables{Count: 24, Scale: 1, BuyLocation: center, SavedSearchQuery: query.Query, IncludePopular: true}
+	variables.Params.BQF.Callsite = "COMMERCE_MKTPLACE_SEO_USERS"
+	variables.Params.BQF.Query = query.Query
+	variables.Params.Browse = json.RawMessage(`{"commerce_search_and_rp_available":true,"commerce_search_and_rp_category_id":[],"filter_price_lower_bound":0,"filter_price_upper_bound":214748364700}`)
+	variables.Params.Custom = json.RawMessage(`{"surface":"SEARCH","search_vertical":"C2C","contextual_filters":[],"virtual_contextual_filters":[],"serp_landing_settings":{"virtual_category_id":""}}`)
+	raw, err := json.Marshal(variables)
 	if err != nil {
-		return searchPage{}, err
+		return searchPage{}, shop.Errorf(shop.ErrInternal, "encode marketplace search: %v", err)
 	}
-	return parseSearchPage(body)
+	return searchPage{DocID: searchDocumentID, Variables: raw, Center: center}, nil
 }
 
 type directSearchVariables struct {

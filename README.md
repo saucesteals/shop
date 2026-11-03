@@ -185,7 +185,7 @@ shop search "protein powder"
 shop search "headphones" --sort price_low --min-price 2000 --max-price 15000
 shop search "laptop" --min-rating 4.0 --category Electronics
 shop search "keyboard" --filter brand=Keychron --page 2
-shop search "desk" --store facebook --filter city=austin --filter radius=15mi
+shop search "desk" --store facebook --filter latitude=30.2677 --filter longitude=-97.7475 --filter radius=15mi
 ```
 
 > **Prices are in cents** (minor units). `--min-price 2000` = $20.00.
@@ -201,25 +201,24 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 - `--max-price` — Maximum price in minor units (cents)
 - `--min-rating` — Minimum average rating (e.g. `4.0`)
 - `--category` — Category filter (provider-specific)
-- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city` or paired `latitude`/`longitude`, plus `radius`, `days_since_listed`, and `shipping`.
+- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses paired `latitude`/`longitude`, plus `radius`, `days_since_listed`, and `shipping`.
 
 </details>
 
 ### Facebook Marketplace
 
-Search responses include `nextCursor` when another native batch is available. Pass it with `--cursor` and the same query, sort, and filters to continue without replaying earlier result batches. Do not combine a cursor with `--page`; cursor responses use `page: 0` because the native token does not identify a page number. Numbered pagination remains supported. Search is stateless: supply `latitude` and `longitude` filters for one GraphQL request per native batch, with no HTML, JavaScript discovery, cookies, or provider caches. City-slug searches resolve coordinates/request metadata through one HTML document on every call. Explicit-coordinate search and pagination use pinned persisted-operation IDs, which need a code update if Facebook retires them. Callers combining batches should deduplicate listing IDs and stop when `hasMore` is false. Leave `--page-size` unset to retain every result in each native batch.
+Search responses include `nextCursor` when another native batch is available. Pass it with `--cursor` and the same query, sort, and filters to continue without replaying earlier result batches. Do not combine a cursor with `--page`; cursor responses use `page: 0` because the native token does not identify a page number. Numbered pagination remains supported. Search is stateless: supply `latitude` and `longitude` filters for one GraphQL request per native batch, with no HTML, JavaScript discovery, cookies, or provider caches. The `city` filter is no longer supported; existing callers must supply both coordinates. Explicit-coordinate search and pagination use pinned persisted-operation IDs, which need a code update if Facebook retires them. Callers combining batches should deduplicate listing IDs and stop when `hasMore` is false. Leave `--page-size` unset to retain every result in each native batch.
 
 The Go API exposes the same optional fields as `SearchQuery.Cursor` and `SearchResult.NextCursor`. Providers that do not support search cursors return `not_supported`. The Facebook client does not persist cookies, including when a supplied HTTP client has a cookie jar.
 
 Anonymous search and listing details. No login, cart, or checkout.
 
-Results request a center specified by paired latitude/longitude filters or a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. Location and radius are sent to Facebook; Shop does not geocode listing cities or remove outside-radius recommendations. No independent distance guarantee or `attributes.distanceKm` is provided. Network, authentication, and rate-limit failures remain errors, not empty results. Product-detail reads still use the listing HTML document.
+Results request a center specified by paired latitude/longitude filters plus radius. Radius is miles unless suffixed with `km`; Facebook's default is 65 km. Location and radius are sent to Facebook; Shop does not geocode listing cities or remove outside-radius recommendations. No independent distance guarantee or `attributes.distanceKm` is provided. Network, authentication, and rate-limit failures remain errors, not empty results. Product-detail reads still use the listing HTML document.
 
 ```bash
 shop search "desk" --store facebook --filter latitude=30.2677 --filter longitude=-97.7475 --filter radius=15mi
-shop search "desk" --store facebook --filter city=austin --filter radius=15mi
-shop search "desk" --store facebook --sort newest --filter city=austin --filter days_since_listed=1
-shop search "desk" --store facebook --filter city=austin --filter radius=15mi --page 2
+shop search "desk" --store facebook --sort newest --filter latitude=30.2677 --filter longitude=-97.7475 --filter days_since_listed=1
+shop search "desk" --store facebook --filter latitude=30.2677 --filter longitude=-97.7475 --filter radius=15mi --page 2
 shop product 2643088989483257 --store facebook
 ```
 
