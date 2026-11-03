@@ -26,10 +26,9 @@ type bootloaderResource struct {
 	Src  string `json:"src"`
 }
 
-func (s *Store) operationID(ctx context.Context, body []byte, component, module string) (string, error) {
-	resources, err := operationResources(body, component)
-	if err != nil {
-		return "", err
+func (s *Store) operationID(ctx context.Context, resources []string, module string) (string, error) {
+	if len(resources) == 0 {
+		return "", shop.Errorf(shop.ErrUpstream, "marketplace pagination resources missing")
 	}
 	resourceKey := strings.Join(resources, "\x00")
 	s.cacheMu.RLock()

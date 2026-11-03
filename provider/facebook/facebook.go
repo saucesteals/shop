@@ -91,7 +91,6 @@ func New(client *http.Client) (*Store, error) {
 
 	return &Store{
 		client:     client,
-		places:     make(map[string]coordinate),
 		operations: make(map[string]cachedOperation),
 	}, nil
 }
@@ -105,9 +104,9 @@ type cachedOperation struct {
 type Store struct {
 	client *http.Client
 
-	cacheMu    sync.RWMutex
-	places     map[string]coordinate
-	operations map[string]cachedOperation
+	cacheMu     sync.RWMutex
+	searchPages map[string]cachedSearchPage
+	operations  map[string]cachedOperation
 }
 
 func storeInfo() shop.StoreInfo {

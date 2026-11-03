@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/url"
 	"regexp"
 	"sort"
@@ -23,8 +22,6 @@ const (
 	searchContentComponent    = "CometMarketplaceSearchContentContainer.react"
 	searchPaginationOperation = "CometMarketplaceSearchContentPaginationQuery_facebookRelayOperation"
 	searchPaginationQuery     = "CometMarketplaceSearchContentPaginationQuery"
-	locationDialogComponent   = "MarketplaceBuyLocationDialog.react"
-	locationSearchOperation   = "MarketplaceSearchAddressDataSourceQuery_facebookRelayOperation"
 )
 
 var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
@@ -220,11 +217,8 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if query.MinPrice != nil && query.MaxPrice != nil && *query.MinPrice > *query.MaxPrice {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "min price must not exceed max price")
 	}
-	body, err := s.document(ctx, "/marketplace/"+city+"/search/?"+params.Encode())
-	if err != nil {
-		return nil, err
-	}
-	search, err := parseSearchPage(body)
+	path := "/marketplace/" + city + "/search/?" + params.Encode()
+	search, resources, err := s.searchPage(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -234,8 +228,11 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	paginationDocID := ""
 	if page > 1 || query.Cursor != "" {
-		paginationDocID, err = s.operationID(ctx, body, searchContentComponent, searchPaginationOperation)
+		paginationDocID, err = s.operationID(ctx, resources, searchPaginationOperation)
 		if err != nil {
+			if !shop.IsRateLimited(err) {
+				s.invalidateSearchPage(path)
+			}
 			return nil, err
 		}
 	}
@@ -249,6 +246,9 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	feed, err := s.searchFeed(ctx, docID, operation, variables)
 	if err != nil {
+		if !shop.IsRateLimited(err) {
+			s.invalidateSearchPage(path)
+		}
 		return nil, err
 	}
 	if query.Cursor != "" && feed.PageInfo.HasNextPage && feed.PageInfo.EndCursor == query.Cursor {
@@ -279,20 +279,13 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		}
 		feed, err = s.searchFeed(ctx, paginationDocID, searchPaginationQuery, variables)
 		if err != nil {
+			if !shop.IsRateLimited(err) {
+				s.invalidateSearchPage(path)
+			}
 			return nil, err
 		}
 	}
-	locationDocID := ""
-	if len(feed.Edges) > 0 {
-		locationDocID, err = s.operationID(ctx, body, locationDialogComponent, locationSearchOperation)
-		if err != nil {
-			return nil, err
-		}
-	}
-	products, outside, unverifiable, malformed, err := s.productsInRadius(ctx, locationDocID, feed.Edges, seenBefore, search.Center, radiusKm)
-	if err != nil {
-		return nil, err
-	}
+	products, malformed := searchProducts(feed.Edges, seenBefore)
 	if newest {
 		sort.SliceStable(products, func(i, j int) bool {
 			return creationTime(products[i]) > creationTime(products[j])
@@ -313,12 +306,6 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 			return nil, shop.Errorf(shop.ErrUpstream, "marketplace omitted its pagination cursor")
 		}
 		result.NextCursor = feed.PageInfo.EndCursor
-	}
-	if outside > 0 {
-		result.Warnings = append(result.Warnings, countWarning(outside, "listing outside the requested city-center radius was removed", "listings outside the requested city-center radius were removed"))
-	}
-	if unverifiable > 0 {
-		result.Warnings = append(result.Warnings, countWarning(unverifiable, "listing without a verifiable Marketplace city was removed", "listings without a verifiable Marketplace city were removed"))
 	}
 	if malformed > 0 {
 		result.Warnings = append(result.Warnings, countWarning(malformed, "incomplete Marketplace listing was skipped", "incomplete Marketplace listings were skipped"))
@@ -344,7 +331,7 @@ func countWarning(count int, singular, plural string) string {
 func distanceWarnings() []string {
 	return []string{
 		"Search listing currencies may be omitted by Facebook; USD is assumed.",
-		"Radius filtering is approximate because search results expose Marketplace city centers, not exact seller coordinates.",
+		"Location and radius are requested from Facebook; results may include outside-radius recommendations and are not independently filtered.",
 	}
 }
 
@@ -525,11 +512,9 @@ func creationTime(product shop.ProductSummary) int64 {
 	return value
 }
 
-func (s *Store) productsInRadius(ctx context.Context, locationDocID string, edges []searchEdge, excluded map[string]bool, center coordinate, radiusKm int) ([]shop.ProductSummary, int, int, int, error) {
+func searchProducts(edges []searchEdge, excluded map[string]bool) ([]shop.ProductSummary, int) {
 	products := make([]shop.ProductSummary, 0, len(edges))
 	seen := make(map[string]bool)
-	outside := 0
-	unverifiable := 0
 	malformed := 0
 	for _, edge := range edges {
 		if edge.Node.Listing == nil {
@@ -546,25 +531,7 @@ func (s *Store) productsInRadius(ctx context.Context, locationDocID string, edge
 		if seen[product.ID] {
 			continue
 		}
-		point, err := s.placeCoordinate(ctx, locationDocID, edge.Node.Listing.place())
-		if err != nil {
-			if shop.IsNotFound(err) {
-				unverifiable++
-				continue
-			}
-
-			return nil, 0, 0, 0, err
-		}
-		distance := distanceKm(center, point)
-		if distance > float64(radiusKm) {
-			outside++
-			continue
-		}
 		seen[product.ID] = true
-		if product.Attributes == nil {
-			product.Attributes = make(map[string]any)
-		}
-		product.Attributes["distanceKm"] = math.Round(distance*10) / 10
 		products = append(products, shop.ProductSummary{
 			ID:           product.ID,
 			Title:        product.Title,
@@ -576,5 +543,5 @@ func (s *Store) productsInRadius(ctx context.Context, locationDocID string, edge
 		})
 	}
 
-	return products, outside, unverifiable, malformed, nil
+	return products, malformed
 }
