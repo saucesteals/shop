@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/saucesteals/shop"
@@ -89,26 +88,11 @@ func New(client *http.Client) (*Store, error) {
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-	return &Store{
-		client:     client,
-		places:     make(map[string]coordinate),
-		operations: make(map[string]cachedOperation),
-	}, nil
+	return &Store{client: client}, nil
 }
 
-type cachedOperation struct {
-	resources string
-	id        string
-}
-
-// Store implements public Marketplace document lookups.
-type Store struct {
-	client *http.Client
-
-	cacheMu    sync.RWMutex
-	places     map[string]coordinate
-	operations map[string]cachedOperation
-}
+// Store implements stateless public Marketplace lookups.
+type Store struct{ client *http.Client }
 
 func storeInfo() shop.StoreInfo {
 	return shop.StoreInfo{
