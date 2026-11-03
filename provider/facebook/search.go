@@ -16,12 +16,11 @@ import (
 )
 
 const (
-	defaultRadiusKm           = 65
-	maxRadiusKm               = 500
-	searchQueryName           = "CometMarketplaceSearchContentContainerQuery"
-	searchContentComponent    = "CometMarketplaceSearchContentContainer.react"
-	searchPaginationOperation = "CometMarketplaceSearchContentPaginationQuery_facebookRelayOperation"
-	searchPaginationQuery     = "CometMarketplaceSearchContentPaginationQuery"
+	defaultRadiusKm       = 65
+	maxRadiusKm           = 500
+	searchQueryName       = "CometMarketplaceSearchContentContainerQuery"
+	searchPaginationID    = "29524051190535018"
+	searchPaginationQuery = "CometMarketplaceSearchContentPaginationQuery"
 )
 
 var radiusValue = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(mi|km)?$`)
@@ -121,12 +120,13 @@ func parseRadiusKm(raw, unit string) (int, error) {
 }
 
 func searchCityRadius(filters map[string]string) (string, int, error) {
-	if filters == nil || strings.TrimSpace(filters["city"]) == "" {
-		return "", 0, shop.Errorf(shop.ErrInvalidInput, "marketplace search requires --filter city=<city>")
-	}
-	city, err := marketplaceCity(filters["city"])
-	if err != nil {
-		return "", 0, err
+	city := strings.TrimSpace(filters["city"])
+	var err error
+	if city != "" {
+		city, err = marketplaceCity(city)
+		if err != nil {
+			return "", 0, err
+		}
 	}
 	radiusKm := defaultRadiusKm
 	if raw := strings.ToLower(strings.TrimSpace(filters["radius"])); raw != "" {
@@ -141,10 +141,9 @@ func searchCityRadius(filters map[string]string) (string, int, error) {
 	return city, radiusKm, nil
 }
 
-// Search returns one native Marketplace page for a city and radius.
-// The HTML search document is used only to discover the city coordinates and
-// Relay operation IDs. The listing feed is always fetched from GraphQL with
-// explicit buyLocation, radius, sort, and listing-age variables.
+// Search returns one native Marketplace page. Explicit coordinates avoid HTML
+// discovery; city slugs resolve through a search document on each call.
+// No bootstrap, operation, or listing state is retained between calls.
 func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.SearchResult, error) {
 	if query == nil || strings.TrimSpace(query.Query) == "" {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "marketplace search query is required")
@@ -163,7 +162,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	for key := range query.Filters {
 		switch key {
-		case "city", "days_since_listed", "radius", "radius_unit", "shipping":
+		case "city", "latitude", "longitude", "days_since_listed", "radius", "radius_unit", "shipping":
 		default:
 			return nil, shop.Errorf(shop.ErrNotSupported, "unsupported marketplace filter %q", key)
 		}
@@ -217,8 +216,7 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if query.MinPrice != nil && query.MaxPrice != nil && *query.MinPrice > *query.MaxPrice {
 		return nil, shop.Errorf(shop.ErrInvalidInput, "min price must not exceed max price")
 	}
-	path := "/marketplace/" + city + "/search/?" + params.Encode()
-	search, resources, err := s.searchPage(ctx, path)
+	search, err := s.searchPage(ctx, city, params, query)
 	if err != nil {
 		return nil, err
 	}
@@ -226,19 +224,9 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	if err != nil {
 		return nil, err
 	}
-	paginationDocID := ""
-	if page > 1 || query.Cursor != "" {
-		paginationDocID, err = s.operationID(ctx, resources, searchPaginationOperation)
-		if err != nil {
-			if !shop.IsRateLimited(err) {
-				s.invalidateSearchPage(path)
-			}
-			return nil, err
-		}
-	}
 	docID, operation, variables := search.DocID, searchQueryName, search.Variables
 	if query.Cursor != "" {
-		docID, operation = paginationDocID, searchPaginationQuery
+		docID, operation = searchPaginationID, searchPaginationQuery
 		variables, err = searchVariables(search.Variables, query.Cursor)
 		if err != nil {
 			return nil, err
@@ -246,9 +234,6 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 	}
 	feed, err := s.searchFeed(ctx, docID, operation, variables)
 	if err != nil {
-		if !shop.IsRateLimited(err) {
-			s.invalidateSearchPage(path)
-		}
 		return nil, err
 	}
 	if query.Cursor != "" && feed.PageInfo.HasNextPage && feed.PageInfo.EndCursor == query.Cursor {
@@ -277,11 +262,8 @@ func (s *Store) Search(ctx context.Context, query *shop.SearchQuery) (*shop.Sear
 		if err != nil {
 			return nil, err
 		}
-		feed, err = s.searchFeed(ctx, paginationDocID, searchPaginationQuery, variables)
+		feed, err = s.searchFeed(ctx, searchPaginationID, searchPaginationQuery, variables)
 		if err != nil {
-			if !shop.IsRateLimited(err) {
-				s.invalidateSearchPage(path)
-			}
 			return nil, err
 		}
 	}

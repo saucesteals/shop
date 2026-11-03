@@ -201,21 +201,22 @@ shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 - `--max-price` — Maximum price in minor units (cents)
 - `--min-rating` — Minimum average rating (e.g. `4.0`)
 - `--category` — Category filter (provider-specific)
-- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city`, `radius`, `days_since_listed`, and `shipping`.
+- `--filter` — Arbitrary `key=value` filter (repeatable). Facebook Marketplace uses `city` or paired `latitude`/`longitude`, plus `radius`, `days_since_listed`, and `shipping`.
 
 </details>
 
 ### Facebook Marketplace
 
-Search responses include `nextCursor` when another native batch is available. Pass it with `--cursor` and the same query, sort, and filters to continue without replaying earlier result batches. Do not combine a cursor with `--page`; cursor responses use `page: 0` because the native token does not identify a page number. Numbered pagination remains supported. A Store caches search bootstrap metadata for one hour (up to 64 query/filter combinations), but fetches listing results fresh on every call. Warm first-page searches make one GraphQL request, with no HTML or JavaScript fetches. Cold searches fetch one HTML bootstrap first; pagination discovers its operation lazily from client scripts. Non-rate-limit feed errors invalidate the bootstrap for the next call without retrying the failed request. CLI invocations create a new Store, so this in-memory cache primarily benefits long-running Go clients. Callers combining batches should deduplicate listing IDs and stop when `hasMore` is false. Leave `--page-size` unset to retain every result in each native batch.
+Search responses include `nextCursor` when another native batch is available. Pass it with `--cursor` and the same query, sort, and filters to continue without replaying earlier result batches. Do not combine a cursor with `--page`; cursor responses use `page: 0` because the native token does not identify a page number. Numbered pagination remains supported. Search is stateless: supply `latitude` and `longitude` filters for one GraphQL request per native batch, with no HTML, JavaScript discovery, cookies, or provider caches. City-slug searches resolve coordinates/request metadata through one HTML document on every call. Explicit-coordinate search and pagination use pinned persisted-operation IDs, which need a code update if Facebook retires them. Callers combining batches should deduplicate listing IDs and stop when `hasMore` is false. Leave `--page-size` unset to retain every result in each native batch.
 
 The Go API exposes the same optional fields as `SearchQuery.Cursor` and `SearchResult.NextCursor`. Providers that do not support search cursors return `not_supported`. The Facebook client does not persist cookies, including when a supplied HTTP client has a cookie jar.
 
 Anonymous search and listing details. No login, cart, or checkout.
 
-Results are scoped to a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. Location and radius are sent to Facebook; Shop does not geocode listing cities or remove outside-radius recommendations. No independent distance guarantee or `attributes.distanceKm` is provided. Network, authentication, and rate-limit failures remain errors, not empty results. Product-detail reads still use the listing HTML document.
+Results request a center specified by paired latitude/longitude filters or a Facebook city slug plus radius (`austin`, `nyc`, `sanfrancisco`, `la`). Radius is miles unless suffixed with `km`; Facebook's default is 65 km. Location and radius are sent to Facebook; Shop does not geocode listing cities or remove outside-radius recommendations. No independent distance guarantee or `attributes.distanceKm` is provided. Network, authentication, and rate-limit failures remain errors, not empty results. Product-detail reads still use the listing HTML document.
 
 ```bash
+shop search "desk" --store facebook --filter latitude=30.2677 --filter longitude=-97.7475 --filter radius=15mi
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi
 shop search "desk" --store facebook --sort newest --filter city=austin --filter days_since_listed=1
 shop search "desk" --store facebook --filter city=austin --filter radius=15mi --page 2
