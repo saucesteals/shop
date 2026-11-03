@@ -63,10 +63,12 @@ func (a *authState) httpCookies() []*http.Cookie {
 	return out
 }
 
-// cookieValue returns the value of the named cookie, or empty string.
-func (a *authState) cookieValue(name string) string {
+// accessToken returns the region's Atza access token cookie. Its name depends
+// on the cookie domain (at-main for .amazon.com, at-acbfr for .amazon.fr), so
+// it is matched by prefix rather than by a fixed name.
+func (a *authState) accessToken() string {
 	for _, c := range a.Cookies {
-		if c.Name == name {
+		if strings.HasPrefix(c.Name, "at-") {
 			return c.Value
 		}
 	}
@@ -215,7 +217,7 @@ func (s *Store) startCodePairFlow(ctx context.Context) (*shop.LoginResult, error
 func (s *Store) pollRegistration(ctx context.Context, state *authState) (*shop.LoginResult, error) {
 	d := state.Device
 
-	result, err := registerDevice(ctx, s.client, d, state.PublicCode, state.PrivateCode)
+	result, err := registerDevice(ctx, s.client, d, s.handle, state.PublicCode, state.PrivateCode)
 	if err != nil {
 		return nil, err
 	}

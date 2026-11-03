@@ -55,8 +55,7 @@ const (
 	// The TVSS backend validates this format — do not change without testing.
 	tvssUA = "AMZN(SetTopBox/Amazon Fire TV Mantis/AKPGW064GI9HE,Android/7.1.2,ShopTV3P/release/2.0)"
 
-	authDomain   = "api.amazon.com"
-	cookieDomain = ".amazon.com"
+	authDomain = "api.amazon.com"
 )
 
 // defaultCookieExpiry is the assumed cookie lifetime (~1 year) when the
@@ -254,8 +253,8 @@ func generateCodePair(ctx context.Context, client *amazonClient, d device) (*cod
 // the code. Returns nil, nil if the user has not yet completed auth (the
 // authorization_pending case). Returns a *shop.Error for actual failures
 // (rate limits, server errors, malformed requests).
-func registerDevice(ctx context.Context, client *amazonClient, d device, publicCode, privateCode string) (*registrationResult, error) {
-	payload := buildRegisterPayload(d, publicCode, privateCode)
+func registerDevice(ctx context.Context, client *amazonClient, d device, handle, publicCode, privateCode string) (*registrationResult, error) {
+	payload := buildRegisterPayload(d, handle, publicCode, privateCode)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -341,8 +340,10 @@ func handleRegisterError(statusCode int, body []byte) (*registrationResult, erro
 
 // --- Helpers ---
 
-// buildRegisterPayload constructs the typed register request body.
-func buildRegisterPayload(d device, publicCode, privateCode string) registerPayload {
+// buildRegisterPayload constructs the typed register request body. Website
+// cookies are requested for the store's own domain: each Amazon region keeps
+// a separate session (at-main on .amazon.com, at-acbfr on .amazon.fr, ...).
+func buildRegisterPayload(d device, handle, publicCode, privateCode string) registerPayload {
 	return registerPayload{
 		AuthData: registerAuthData{
 			UseGlobalAuthentication: "true",
@@ -359,7 +360,7 @@ func buildRegisterPayload(d device, publicCode, privateCode string) registerPayl
 			"website_cookies",
 		},
 		Cookies: registerCookies{
-			Domain:         cookieDomain,
+			Domain:         "." + handle,
 			WebsiteCookies: []any{},
 		},
 		RequestedExtensions: []string{

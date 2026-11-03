@@ -169,7 +169,7 @@ type tvssClient struct {
 	http          *amazonClient
 	state         *authState
 	cookies       []*http.Cookie // standard cookies for AddCookie
-	accessToken   string         // at-main Atza token for x-amz-access-token header
+	accessToken   string         // region Atza token (at-main, at-acbfr, ...) for x-amz-access-token
 	marketplaceID string         // region-specific marketplace ID
 	udid          string         // stable device UDID, reused per request
 }
@@ -182,7 +182,7 @@ func newTVSSClient(httpClient *amazonClient, state *authState, marketplaceID str
 		http:          httpClient,
 		state:         state,
 		cookies:       state.httpCookies(),
-		accessToken:   state.cookieValue("at-main"),
+		accessToken:   state.accessToken(),
 		marketplaceID: marketplaceID,
 		udid:          state.Device.DeviceSerial,
 	}
